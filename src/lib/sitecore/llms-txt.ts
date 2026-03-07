@@ -32,7 +32,8 @@ export async function generateLlmTxtStream(
   siteName: string,
   siteId: string,
   targetFieldName: string,
-  language: string
+  language: string,
+  aiApiKey: string
 ): Promise<Response> {
   try {
     // 1. Get all pages for the site
@@ -111,8 +112,6 @@ export async function generateLlmTxtStream(
 
       rawAggregate += `TITLE: ${page.title}\nURL: ${page.url}\nCONTENT:\n${page.markdown}\n\n`;
     }
-
-    const aiKey = process.env.VERCEL_AI_KEY;
     
     // Save function to run when text finishes generating or instantly if fallback
     const saveToSitecore = async (textToSave: string) => {
@@ -164,9 +163,9 @@ export async function generateLlmTxtStream(
       }
     };
 
-    if (aiKey) {
+    if (aiApiKey) {
       // Stream Response
-      const gw = createGateway({ apiKey: aiKey });
+      const gw = createGateway({ apiKey: aiApiKey });
       const result = await streamText({
         model: gw('openai/gpt-5-nano'),
         system: `You are an expert at creating standard llms.txt files.
@@ -188,7 +187,7 @@ ONLY output the generated llms.txt Markdown text. Do not wrap it in \`\`\`markdo
       
       return result.toTextStreamResponse();
     } else {
-      console.warn("VERCEL_AI_KEY not found in .env. Falling back to basic concatenation.");
+      console.warn("VERCEL_AI_KEY not specified. Falling back to basic concatenation.");
       // Fallback Response
       let llmContent = `# ${siteName}\n\n> Aggregated AI-ready content for ${siteName}\n\n## Sections\n\n`;
       for (const page of processedPagesResult) {

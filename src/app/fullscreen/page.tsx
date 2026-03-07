@@ -101,7 +101,7 @@ const LOADER_QUOTES = [
 
 function StandaloneExtension() {
   const { setModalOpen, needsSetup, setNeedsSetup, markSetupComplete } = useAppSettings();
-  const { targetFieldName, metaFieldName } = useAppConfig();
+  const { targetFieldName, metaFieldName, vercelAiGatewayApiKey } = useAppConfig();
   const sitecoreContextId = usePreviewContextId();
   const { getAccessTokenSilently } = useAuth();
 
@@ -430,6 +430,7 @@ function StandaloneExtension() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          'x-vercel-api-key': vercelAiGatewayApiKey,
         },
         body: JSON.stringify({
           siteName: selectedSite.name,

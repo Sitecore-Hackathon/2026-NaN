@@ -40,12 +40,14 @@ export interface AppConfig {
   metaFieldName: string;
   /** Field name on the site settings template for llm.txt content (e.g. "AiLlmTxt") */
   llmFieldName: string;
+  vercelAiGatewayApiKey: string;
 }
 
 const defaultConfig: AppConfig = {
   targetFieldName: 'AiMarkdown',
   metaFieldName: 'AiMarkdownMeta',
   llmFieldName: 'LLM',
+  vercelAiGatewayApiKey: '',
 };
 
 interface AppSettingsContextType {
@@ -160,7 +162,7 @@ export function AppSettingsModal({ isOpen, onOpenChange }: AppSettingsModalProps
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className='sm:max-w-[425px]'>
+      <DialogContent className='sm:max-w-[425px]' onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>AEO Helper Settings</DialogTitle>
           <DialogDescription>
@@ -169,6 +171,16 @@ export function AppSettingsModal({ isOpen, onOpenChange }: AppSettingsModalProps
         </DialogHeader>
 
         <div className='grid gap-4 py-4'>
+          <div className='space-y-2'>
+            <Label htmlFor='cfg-llm'>Vercel AI Gateway API key</Label>
+            <Input
+              id='cfg-llm'
+              placeholder='sk-...'
+              value={temp.vercelAiGatewayApiKey}
+              onChange={(e) => set('vercelAiGatewayApiKey', e.target.value)}
+              type='password'
+            />
+          </div>
           <div className='grid grid-cols-2 gap-3'>
             <div className='space-y-2'>
               <Label htmlFor='cfg-target'>Target field name</Label>
