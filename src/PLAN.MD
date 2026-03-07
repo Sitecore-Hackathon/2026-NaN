@@ -25,7 +25,7 @@ Sitecore field, and aggregates everything into `llms.txt` / `llms-full.txt`.
 | `robots.txt` snippet | App generates the ready-to-copy `User-agent: GPTBot / Allow: /llms.txt` block |
 | llms.txt hosting | Needs to live at the website's domain. Leave delivery strategy open; provide download for now + document Media Library upload and proxy options |
 | Configuration storage | Store in a dedicated XMC content item (survives Vercel redeployments; visible to editors) |
-| Long-running batch | Use Server-Sent Events (SSE) for progress streaming; Vercel KV for job state |
+| Long-running batch | Use Server-Sent Events (SSE) for progress streaming; job state stored in XMC content item |
 | Multilingual | Pipeline iterates `(url, language)` pairs; field name per language or JSON blob |
 
 ---
@@ -37,7 +37,7 @@ Sitecore field, and aggregates everything into `llms.txt` / `llms-full.txt`.
 **AI:** Vercel AI SDK with **AI Gateway** as provider abstraction
 **UI:** Blok design system (Sitecore's shadcn theme)
 **Storage:** Sitecore fields via XMC Authoring GraphQL
-**Job state:** Sitecore item -> should be configured in code
+**Job state:** Sitecore content item (persists across redeployments; visible to editors)
 
 ---
 
@@ -103,14 +103,23 @@ Ensure first paragraph directly answers "What is {pageTitle}?"
 Return JSON: { markdown, description, faqCount, entities }
 ```
 
-Use `generateObject` with Zod schema to get structured output:
+Use `generateText` with `Output.object()` to get structured output:
 ```typescript
+import { generateText, Output } from 'ai';
+import { z } from 'zod';
+
 const aeoSchema = z.object({
   markdown: z.string(),
   description: z.string(),   // one-sentence for llms.txt index
   faqCount: z.number(),
   entities: z.array(z.string()),
   wordCount: z.number(),
+});
+
+const { output } = await generateText({
+  model: gateway('...'),
+  output: Output.object({ schema: aeoSchema }),
+  prompt: '...',
 });
 ```
 
@@ -190,7 +199,7 @@ Refer to ./src/lib/sitecore/storage/*.ts
 
 ### Phase 3 — Batch Processing
 - Discovery: recursive XMC GraphQL tree traversal from home item (client-side, SDK)
-- `POST /api/jobs/start` → Vercel KV job state → processing loop
+- `POST /api/jobs/start` → XMC job state item → processing loop
 - `GET /api/jobs/[id]/stream` SSE progress
 - Overview tab with progress bar; incremental mode (`updatedAt` vs `processedAt`)
 
