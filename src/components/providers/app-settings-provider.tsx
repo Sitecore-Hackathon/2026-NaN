@@ -28,6 +28,13 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { HelpCircle } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -152,6 +159,19 @@ export function AppSettingsProvider({ children }: AppSettingsProviderProps) {
 // Modal
 // ---------------------------------------------------------------------------
 
+function FieldHint({ text }: { text: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <HelpCircle className='h-3.5 w-3.5 text-muted-foreground cursor-help shrink-0' />
+      </TooltipTrigger>
+      <TooltipContent side='right' className='max-w-56 text-xs'>
+        {text}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 interface AppSettingsModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -188,48 +208,74 @@ export function AppSettingsModal({ isOpen, onOpenChange }: AppSettingsModalProps
           </DialogDescription>
         </DialogHeader>
 
-        <div className='grid gap-4 py-4'>
-          <div className='space-y-2'>
-            <Label htmlFor='cfg-llm'>Vercel AI Gateway API key</Label>
-            <Input
-              id='cfg-llm'
-              placeholder='sk-...'
-              value={temp.vercelAiGatewayApiKey}
-              onChange={(e) => set('vercelAiGatewayApiKey', e.target.value)}
-              type='password'
-            />
-          </div>
-          <div className='grid grid-cols-2 gap-3'>
+        <TooltipProvider delayDuration={200}>
+          <div className='grid gap-4 py-4'>
+            {/* API key */}
             <div className='space-y-2'>
-              <Label htmlFor='cfg-target'>Target field name</Label>
+              <div className='flex items-center gap-1.5'>
+                <Label htmlFor='cfg-gateway-key'>Vercel AI Gateway API key</Label>
+                <FieldHint text='Required to call AI models via Vercel AI Gateway. Obtain it from your Vercel dashboard under AI → Gateway.' />
+              </div>
               <Input
-                id='cfg-target'
-                className='focus:ring-primary'
-                placeholder='AiMarkdown'
-                value={temp.targetFieldName}
-                onChange={(e) => set('targetFieldName', e.target.value)}
+                id='cfg-gateway-key'
+                placeholder='sk-...'
+                value={temp.vercelAiGatewayApiKey}
+                onChange={(e) => set('vercelAiGatewayApiKey', e.target.value)}
+                type='password'
               />
             </div>
-            <div className='space-y-2'>
-              <Label htmlFor='cfg-meta'>Meta field name</Label>
-              <Input
-                id='cfg-meta'
-                placeholder='AiMarkdownMeta'
-                value={temp.metaFieldName}
-                onChange={(e) => set('metaFieldName', e.target.value)}
-              />
+
+            {/* Field names section */}
+            <div className='space-y-3'>
+              <div>
+                <p className='text-sm font-medium'>Sitecore field names</p>
+                <p className='text-xs text-muted-foreground mt-0.5'>
+                  Names of fields added to your templates by the setup wizard. Change only if your project uses different names.
+                </p>
+              </div>
+
+              <div className='grid grid-cols-2 gap-3'>
+                <div className='space-y-2'>
+                  <div className='flex items-center gap-1.5'>
+                    <Label htmlFor='cfg-target'>AEO content field</Label>
+                    <FieldHint text='Field on page templates where generated AEO markdown is saved (Plugin field type).' />
+                  </div>
+                  <Input
+                    id='cfg-target'
+                    placeholder='AiMarkdown'
+                    value={temp.targetFieldName}
+                    onChange={(e) => set('targetFieldName', e.target.value)}
+                  />
+                </div>
+                <div className='space-y-2'>
+                  <div className='flex items-center gap-1.5'>
+                    <Label htmlFor='cfg-meta'>Metadata field</Label>
+                    <FieldHint text='Field on page templates storing generation metadata (model used, timestamp, token counts) as JSON.' />
+                  </div>
+                  <Input
+                    id='cfg-meta'
+                    placeholder='AiMarkdownMeta'
+                    value={temp.metaFieldName}
+                    onChange={(e) => set('metaFieldName', e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className='space-y-2'>
+                <div className='flex items-center gap-1.5'>
+                  <Label htmlFor='cfg-llmtxt'>Site LLM.txt field</Label>
+                  <FieldHint text='Field on the site settings template where the generated llm.txt file content is stored.' />
+                </div>
+                <Input
+                  id='cfg-llmtxt'
+                  placeholder='AiLlmTxt'
+                  value={temp.llmFieldName}
+                  onChange={(e) => set('llmFieldName', e.target.value)}
+                />
+              </div>
             </div>
           </div>
-          <div className='space-y-2'>
-            <Label htmlFor='cfg-llm'>LLM.txt field name</Label>
-            <Input
-              id='cfg-llm'
-              placeholder='AiLlmTxt'
-              value={temp.llmFieldName}
-              onChange={(e) => set('llmFieldName', e.target.value)}
-            />
-          </div>
-        </div>
+        </TooltipProvider>
 
         <DialogFooter>
           <Button onClick={handleSave} disabled={isSaving}>

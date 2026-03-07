@@ -595,9 +595,6 @@ function StandaloneExtension() {
             )}
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" onClick={() => setNeedsSetup(true)} title="Re-run setup">
-              <Wand2 className="h-4 w-4" />
-            </Button>
             <Button variant="outline" size="icon" aria-label="Settings" onClick={() => setModalOpen(true)}>
               <Settings className="h-4 w-4" />
             </Button>
@@ -655,7 +652,7 @@ function StandaloneExtension() {
               onClick={openOverallLlmEditor}
             >
               <Edit className="h-4 w-4 mr-2" />
-              Review / Edit LLM.TXT
+              Edit LLM.TXT
             </Button>
             <Button
               disabled={!selectedSite || loadingPages || isBatching || isGeneratingLlm}
