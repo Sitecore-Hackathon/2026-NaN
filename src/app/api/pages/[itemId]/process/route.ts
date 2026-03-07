@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { experimental_createXMCClient } from '@sitecore-marketplace-sdk/xmc';
-import { processPage } from '@/lib/sitecore/process-page';
+import { processPage, VersionNotFoundError } from '@/lib/sitecore/process-page';
 
 export async function POST(
   request: NextRequest,
@@ -52,6 +52,9 @@ export async function POST(
     );
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof VersionNotFoundError) {
+      return NextResponse.json({ status: 'version_not_found' });
+    }
     console.error('Error processing page', error);
     return NextResponse.json({ error: 'Failed to process page' }, { status: 500 });
   }

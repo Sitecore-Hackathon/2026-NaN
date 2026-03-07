@@ -1,6 +1,6 @@
 import { experimental_XMC } from '@sitecore-marketplace-sdk/xmc';
 
-export type PageStatus = 'pending' | 'processed' | 'error';
+export type PageStatus = 'pending' | 'processed' | 'error' | 'version_not_found';
 
 export interface PageSummary {
   id: string;
@@ -25,22 +25,26 @@ const GQL_GET_PAGE_FIELDS = `
 
 type FieldNode = { name: string; value: string };
 
+// Returns null when the item has no version in the requested language.
+// Returns [] when the item exists but has no matching fields.
 async function getItemFields(
   client: experimental_XMC,
   contextId: string,
   itemId: string,
   language: string
-): Promise<FieldNode[]> {
+): Promise<FieldNode[] | null> {
   try {
     const result = await client.authoring.graphql({
       body: { query: GQL_GET_PAGE_FIELDS, variables: { itemId, language } },
       query: { sitecoreContextId: contextId },
     });
-    const data = result.data?.data as
-      | { item?: { fields?: { nodes: FieldNode[] } } }
+    const gqlData = result.data?.data as
+      | { item?: { fields?: { nodes: FieldNode[] } } | null }
       | null
       | undefined;
-    return data?.item?.fields?.nodes ?? [];
+    if (gqlData == null) return []; // API/network error — don't mark as version_not_found
+    if (gqlData.item == null) return null; // language version doesn't exist
+    return gqlData.item.fields?.nodes ?? [];
   } catch {
     return [];
   }
@@ -52,19 +56,23 @@ export async function listAllPages(
   siteId: string,
   siteName: string,
   targetFieldName: string,
-  metaFieldName: string
+  metaFieldName: string,
+  language?: string
 ): Promise<PageSummary[]> {
-  // 1. Get site primary language
-  const siteResult = await client.sites.retrieveSite({
-    path: { siteId },
-    query: { sitecoreContextId: contextId },
-  });
-  const language = siteResult.data?.languages?.[0] ?? 'en';
+  // 1. Resolve language: use provided value or fall back to site's primary language
+  let lang = language;
+  if (!lang) {
+    const siteResult = await client.sites.retrieveSite({
+      path: { siteId },
+      query: { sitecoreContextId: contextId },
+    });
+    lang = siteResult.data?.languages?.[0] ?? 'en';
+  }
 
   // 2. Get all pages in one call
   const pagesResult = await client.agent.sitesGetAllPagesBySite({
     path: { siteName },
-    query: { sitecoreContextId: contextId, language },
+    query: { sitecoreContextId: contextId, language: lang },
   });
   const pages = pagesResult.data ?? [];
 
@@ -98,13 +106,27 @@ export async function listAllPages(
     const batch = uniquePages.slice(i, i + BATCH);
     const results = await Promise.all(
       batch.map(async (page): Promise<PageSummary> => {
-        const fields = await getItemFields(client, contextId, page.id, language);
+        const nameFromPath = page.path.split('/').filter(Boolean).at(-1) ?? page.path;
+        const fields = await getItemFields(client, contextId, page.id, lang);
+
+        if (fields === null) {
+          // No version exists for this item in the requested language
+          return {
+            id: page.id,
+            name: nameFromPath,
+            displayName: nameFromPath,
+            url: page.path,
+            updatedAt: null,
+            processedAt: null,
+            wordCount: null,
+            status: 'version_not_found',
+          };
+        }
 
         const targetValue = fields.find((f) => f.name === targetFieldName)?.value ?? '';
         const metaRaw = fields.find((f) => f.name === metaFieldName)?.value ?? '';
         const updatedAt = fields.find((f) => f.name === '__Updated')?.value ?? null;
         const displayName = fields.find((f) => f.name === '__Display name')?.value ?? '';
-        const nameFromPath = page.path.split('/').filter(Boolean).at(-1) ?? page.path;
 
         let processedAt: string | null = null;
         let wordCount: number | null = null;
