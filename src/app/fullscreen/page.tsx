@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -23,6 +23,7 @@ import { usePreviewContextId } from '@/components/providers/marketplace';
 import { useAuth } from '@/components/providers/auth';
 import type { SiteSummary } from '@/lib/sitecore/sites';
 import type { PageSummary } from '@/lib/sitecore/pages';
+import type { ProcessPageResult } from '@/lib/sitecore/process-page';
 
 function formatRelativeTime(dateStr: string | null): string {
   if (!dateStr) return '—';
@@ -33,6 +34,83 @@ function formatRelativeTime(dateStr: string | null): string {
   if (hours < 1) return 'just now';
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+interface ProcessPageTestProps {
+  contextId: string;
+  targetField: string;
+  metaField: string;
+  getToken: () => Promise<string>;
+}
+
+function ProcessPageTest({ contextId, targetField, metaField, getToken }: ProcessPageTestProps) {
+  const [itemId, setItemId] = useState('');
+  const [aiKey, setAiKey] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<ProcessPageResult | { error: string } | null>(null);
+  const resultRef = useRef<HTMLPreElement>(null);
+
+  const handleProcess = async () => {
+    if (!itemId.trim() || !contextId) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const token = await getToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      };
+      if (aiKey.trim()) headers['X-AI-Api-Key'] = aiKey.trim();
+
+      const res = await fetch(`/api/pages/${encodeURIComponent(itemId.trim())}/process`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ contextId, targetField, metaField }),
+      });
+      setResult(await res.json());
+      setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    } catch (e) {
+      setResult({ error: String(e) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+        Test — Process single page
+      </h2>
+
+      <div className="flex gap-2">
+        <input
+          className="flex-1 border rounded px-3 py-1.5 text-sm font-mono bg-background"
+          placeholder="Item ID (GUID)"
+          value={itemId}
+          onChange={(e) => setItemId(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleProcess()}
+        />
+        <input
+          className="w-64 border rounded px-3 py-1.5 text-sm font-mono bg-background"
+          placeholder="AI API key (optional)"
+          value={aiKey}
+          onChange={(e) => setAiKey(e.target.value)}
+        />
+        <Button size="sm" disabled={!itemId.trim() || !contextId || loading} onClick={handleProcess}>
+          {loading ? 'Processing…' : 'Process'}
+        </Button>
+      </div>
+
+      {result && (
+        <pre
+          ref={resultRef}
+          className="text-xs bg-background border rounded p-3 overflow-auto max-h-72 whitespace-pre-wrap"
+        >
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
 }
 
 function StandaloneExtension() {
@@ -224,6 +302,14 @@ function StandaloneExtension() {
           Start Processing
         </Button>
       </div>
+
+      {/* ── Test: Process single page ── */}
+      <ProcessPageTest
+        contextId={sitecoreContextId ?? ''}
+        targetField={targetFieldName}
+        metaField={metaFieldName}
+        getToken={getAccessTokenSilently}
+      />
     </div>
   );
 }

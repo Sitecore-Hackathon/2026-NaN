@@ -132,7 +132,6 @@ const { output } = await generateText({
 - Query XMC for all items where markdown field is populated
 - Group by URL path segment (top-level nav sections)
 - Render `llms.txt` (index format per llmstxt.org spec)
-- Render `llms-full.txt` (inline full markdown bodies, separated by `---`)
 
 ---
 
@@ -162,7 +161,6 @@ POST   /api/pages/[itemId]/process  Process a single page (used by custom-field)
 GET    /api/config                  Read app configuration
 POST   /api/config                  Write app configuration
 GET    /api/output/llms-txt         Generate and return llms.txt
-GET    /api/output/llms-full-txt    Generate and return llms-full.txt
 ```
 
 ---
