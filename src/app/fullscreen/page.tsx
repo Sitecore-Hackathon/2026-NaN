@@ -34,7 +34,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { RefreshCw, Settings, AlertCircle, CheckCircle2, Clock, Loader2, Ban, Wand2, FileText } from 'lucide-react';
+import { RefreshCw, Settings, AlertCircle, CheckCircle2, Clock, Loader2, Ban, Wand2, FileText, Snowflake, Compass, TrendingUp, DoorClosed, Skull, Flame, Moon, Mountain, BookOpen, Sword, Coins } from 'lucide-react';
 import { useAppSettings, useAppConfig } from '@/components/providers/app-settings-provider';
 import { usePreviewContextId } from '@/components/providers/marketplace';
 import { useAuth } from '@/components/providers/auth';
@@ -82,6 +82,21 @@ function StatusBadge({ status }: { status: PageStatus }) {
 
 
 // ── Main extension ────────────────────────────────────────────────────────────
+
+const LOADER_QUOTES = [
+  { text: "Winter is coming.", icon: Snowflake },
+  { text: "The North remembers.", icon: Compass },
+  { text: "Chaos is a ladder.", icon: TrendingUp },
+  { text: "Hold the door.", icon: DoorClosed },
+  { text: "Valar Morghulis.", icon: Skull },
+  { text: "Dracarys!", icon: Flame },
+  { text: "Fire and Blood.", icon: Flame },
+  { text: "The night is dark and full of terrors.", icon: Moon },
+  { text: "The climb is all there is.", icon: Mountain },
+  { text: "Knowledge is power.", icon: BookOpen },
+  { text: "A mind needs books as a sword needs a whetstone.", icon: Sword },
+  { text: "A Lannister always pays his debts.", icon: Coins }
+];
 
 function StandaloneExtension() {
   const { setModalOpen, needsSetup, setNeedsSetup, markSetupComplete } = useAppSettings();
@@ -271,9 +286,19 @@ const processOnePage = async (pageId: string) => {
   const [isGeneratingLlm, setIsGeneratingLlm] = useState(false);
   const [llmStreamText, setLlmStreamText] = useState("");
   const [isLlmStreamOpen, setIsLlmStreamOpen] = useState(false);
+  const [quoteIndex, setQuoteIndex] = useState(0);
+
+  useEffect(() => {
+    if (!isGeneratingLlm || llmStreamText.length > 0) return;
+    const interval = setInterval(() => {
+      setQuoteIndex(Math.floor(Math.random() * LOADER_QUOTES.length));
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [isGeneratingLlm, llmStreamText]);
 
   const generateLlmTxt = async () => {
     if (!selectedSite || !sitecoreContextId) return;
+    setQuoteIndex(Math.floor(Math.random() * LOADER_QUOTES.length));
     setIsGeneratingLlm(true);
     setLlmStreamText("");
     setIsLlmStreamOpen(true);
@@ -334,8 +359,22 @@ const processOnePage = async (pageId: string) => {
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 min-h-0 bg-muted/30 p-4 rounded-md border font-mono text-sm whitespace-pre-wrap overflow-auto">
-            {llmStreamText}
-            {isGeneratingLlm && <span className="animate-pulse">_</span>}
+            {llmStreamText ? (
+              <>
+                {llmStreamText}
+                {isGeneratingLlm && <span className="animate-pulse">_</span>}
+              </>
+            ) : isGeneratingLlm ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground animate-pulse space-y-4">
+                {(() => {
+                  const QuoteIcon = LOADER_QUOTES[quoteIndex].icon;
+                  return <QuoteIcon className="h-10 w-10 animate-pulse text-foreground/50 transition-colors duration-500" />;
+                })()}
+                <p className="text-base font-medium">{LOADER_QUOTES[quoteIndex].text}</p>
+              </div>
+            ) : (
+              "—"
+            )}
           </div>
         </DialogContent>
       </Dialog>
