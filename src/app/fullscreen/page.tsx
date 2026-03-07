@@ -38,12 +38,13 @@ function formatRelativeTime(dateStr: string | null): string {
 
 interface ProcessPageTestProps {
   contextId: string;
+  language: string;
   targetField: string;
   metaField: string;
   getToken: () => Promise<string>;
 }
 
-function ProcessPageTest({ contextId, targetField, metaField, getToken }: ProcessPageTestProps) {
+function ProcessPageTest({ contextId, language, targetField, metaField, getToken }: ProcessPageTestProps) {
   const [itemId, setItemId] = useState('');
   const [aiKey, setAiKey] = useState('');
   const [loading, setLoading] = useState(false);
@@ -65,7 +66,7 @@ function ProcessPageTest({ contextId, targetField, metaField, getToken }: Proces
       const res = await fetch(`/api/pages/${encodeURIComponent(itemId.trim())}/process`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ contextId, targetField, metaField }),
+        body: JSON.stringify({ contextId, language, targetField, metaField }),
       });
       setResult(await res.json());
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
@@ -306,6 +307,7 @@ function StandaloneExtension() {
       {/* ── Test: Process single page ── */}
       <ProcessPageTest
         contextId={sitecoreContextId ?? ''}
+        language={selectedSite?.languages[0] ?? 'en'}
         targetField={targetFieldName}
         metaField={metaFieldName}
         getToken={getAccessTokenSilently}
