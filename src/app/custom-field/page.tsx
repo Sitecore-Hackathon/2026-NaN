@@ -28,18 +28,25 @@ function AiMarkdownFieldEditor() {
 
   // Current markdown value shown in the editor
   const [markdown, setMarkdown] = useState('');
+  // Original value loaded from the field — used to detect unsaved changes
+  const [originalMarkdown, setOriginalMarkdown] = useState('');
 
   // Loading states
   const [loadingValue, setLoadingValue] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // True when the editor content differs from the persisted field value
+  const isDirty = markdown !== originalMarkdown;
+
   // Load the current field value from the host on mount
   useEffect(() => {
     const load = async () => {
       try {
         const value = await client.getValue();
-        setMarkdown(typeof value === 'string' ? value : '');
+        const text = typeof value === 'string' ? value : '';
+        setMarkdown(text);
+        setOriginalMarkdown(text);
       } catch (e) {
         console.error('Failed to load field value', e);
       } finally {
@@ -94,6 +101,7 @@ function AiMarkdownFieldEditor() {
       }
 
       const result = await res.json();
+      // Update the editor with generated markdown — mark as dirty so Save is enabled
       setMarkdown(result.markdown ?? '');
       toast.success(`Generated ${result.wordCount ?? 0} words`);
     } catch (e) {
@@ -110,6 +118,8 @@ function AiMarkdownFieldEditor() {
     try {
       // canvasReload=true forces Pages editor to refresh the canvas after save
       await client.setValue(markdown, true);
+      // Mark as clean so Save re-disables if the dialog stays open
+      setOriginalMarkdown(markdown);
       await client.closeApp();
     } catch (e) {
       console.error('Save error', e);
@@ -151,16 +161,15 @@ function AiMarkdownFieldEditor() {
 
         {/* Generate button — calls the process API to generate Markdown from page HTML */}
         <Button
-          size="sm"
           variant="outline"
           disabled={generating || !sitecoreContextId}
           onClick={handleGenerate}
-          className="gap-1.5"
+          className="gap-2"
         >
           {generating ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
-            <Sparkles className="w-3.5 h-3.5" />
+            <Sparkles className="w-4 h-4" />
           )}
           {generating ? 'Generating…' : 'Generate from page'}
         </Button>
@@ -193,26 +202,24 @@ function AiMarkdownFieldEditor() {
         {/* Action buttons */}
         <div className="flex gap-2">
           <Button
-            size="sm"
             variant="outline"
             disabled={saving || generating}
             onClick={handleCancel}
-            className="gap-1.5"
+            className="gap-2"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
             Cancel
           </Button>
 
           <Button
-            size="sm"
-            disabled={saving || generating}
+            disabled={saving || generating || !isDirty}
             onClick={handleSave}
-            className="gap-1.5"
+            className="gap-2"
           >
             {saving ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Save className="w-3.5 h-3.5" />
+              <Save className="w-4 h-4" />
             )}
             {saving ? 'Saving…' : 'Save'}
           </Button>
