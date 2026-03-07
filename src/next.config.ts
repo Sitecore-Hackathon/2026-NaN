@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  allowedDevOrigins: ['myapp.local'],
+  allowedDevOrigins: ['aeo.local'],
 };
 
 export default nextConfig;

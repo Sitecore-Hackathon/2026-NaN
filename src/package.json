@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --experimental-https  --experimental-https-key ./certificates/aeo.local-key.pem --experimental-https-cert ./certificates/aeo.local.pem",
+    "dev": "next dev --experimental-https --hostname aeo.local --experimental-https-key ./certificates/aeo.local-key.pem --experimental-https-cert ./certificates/aeo.local.pem",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

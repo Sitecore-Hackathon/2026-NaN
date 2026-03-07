@@ -21,7 +21,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     tenant_id: appContext['marketplaceAppTenantId'],
     product_codes: `mkp_${process.env.NEXT_PUBLIC_SITECORE_APP_ID}`,
     audience: process.env.NEXT_PUBLIC_AUTH0_AUDIENCE,
-    redirect_uri: process.env.NEXT_PUBLIC_APP_BASE_URL,
+    redirect_uri: process.env.NEXT_PUBLIC_APP_BASE_URL + `/?redirect=${window.location.pathname}`,
     scope: process.env.NEXT_PUBLIC_AUTH0_SCOPE,
   };
 
