@@ -32,7 +32,7 @@ LLMify addresses these challenges through three integrated extension points:
 
 ### Key Features
 
-- **Native Conversion Algorithms**: Aumotically convert HTML to clean Markdown (one AI is required)
+- **Native Conversion Algorithms**: Aumotically convert HTML to clean Markdown (AI is NOT required)
 - **Batch Processing**: Process hundreds of pages with progress tracking and cancellation support
 - **Real-Time Status Tracking**: Visual indicators showing processed, pending, error, and no-version states
 - **Language Support**: Process content in multiple languages with per-language configuration
