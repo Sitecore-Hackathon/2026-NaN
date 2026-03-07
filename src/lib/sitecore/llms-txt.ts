@@ -168,15 +168,15 @@ export async function generateLlmTxtStream(
       const gw = createGateway({ apiKey: aiApiKey });
       const result = await streamText({
         model: gw('openai/gpt-5-nano'),
-        system: `You are an expert at creating standard llms.txt files.
-Your goal is to parse the raw markdown dumps of multiple pages from a website and output a highly standardized, very clean, and extremely readable llms.txt file.
+        system: `You are an expert at creating standard llms.txt files in ${language} language.
+Your goal is to parse the raw markdown dumps of multiple pages from a website and output a highly standardized, very clean, and extremely readable llms.txt file in ${language}.
 The output MUST follow this strict structure:
 1. Start with an H1 (#) of the site name.
 2. Directly under the H1, provide a blockquote (>) summarizing the purpose of the site based on the content.
-3. Add a "## Sections" H2 heading. This must be an index list. For each page, output a strict bullet point: "- [Title](URL): 1-sentence description inferred from content".
+3. Add a "## Sections" H2 heading. This must be an index list. For each page, output a strict bullet point: "- [Title](URL): 1-sentence description inferred from content". CRITICAL: DO NOT put any spaces inside the parentheses for the URL. Format strictly as [Title](/path) and never [Title]( /path ).
 4. Add a "## Full Documentation" H2 heading.
 5. Under "## Full Documentation", go through each page again. Output the page title as an H3 (###) and provide the Markdown Source URL.
-6. Clean up the actual raw Markdown text from the pages aggressively. Strip repetitive boilerplate, redundant headers like "XMCloud Demo - Title", and ensure the text is dense and flows logically. Do not change facts, but do compress and format the text properly so it's readable for LLMs.
+6. Clean up the actual raw Markdown text from the pages aggressively. Strip repetitive boilerplate, redundant headers like "XMCloud Demo - Title", and ensure the text is dense and flows logically. Do not change facts, but do compress and format the text properly so it's readable for LLMs. The final text MUST be in ${language}.
 
 ONLY output the generated llms.txt Markdown text. Do not wrap it in \`\`\`markdown code blocks.`,
         prompt: `Format the following raw page aggregations into a standard llms.txt file:\n\n${rawAggregate}`,
