@@ -1,8 +1,5 @@
 import TurndownService from 'turndown';
-import { generateText, Output } from 'ai';
-import { createGateway } from '@ai-sdk/gateway';
 import { experimental_XMC } from '@sitecore-marketplace-sdk/xmc';
-import { z } from 'zod';
 
 export class VersionNotFoundError extends Error {
   constructor(itemId: string, language: string) {
@@ -153,46 +150,11 @@ export async function processPage(
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-  // 5. AI stages (optional — only if an AI API key is provided)
+  // 5. Bypass unused AI enrichment stages
   let finalMarkdown = filteredMarkdown;
   let description: string | null = null;
   let faqCount: number | null = null;
   let entities: string[] | null = null;
-
-  if (aiApiKey) {
-    const gw = createGateway({ apiKey: aiApiKey });
-
-    // Stage A — Structural clean
-    const { output: stageA } = await generateText({
-      model: gw('anthropic/claude-haiku-4-5-20251001'),
-      output: Output.object({ schema: z.object({ markdown: z.string() }) }),
-      system:
-        'Fix heading hierarchy, remove nav/footer noise, normalise lists. Output only the cleaned markdown.',
-      prompt: filteredMarkdown,
-    });
-
-    // Stage B — AEO enrichment
-    const aeoSchema = z.object({
-      markdown: z.string(),
-      description: z.string(),
-      faqCount: z.number(),
-      entities: z.array(z.string()),
-      wordCount: z.number(),
-    });
-    const { output: stageB } = await generateText({
-      model: gw('anthropic/claude-sonnet-4-6'),
-      output: Output.object({ schema: aeoSchema }),
-      system: `Add a ## Frequently Asked Questions section (3-5 Q&As derived from content).
-Ensure the first paragraph directly answers "What is {page topic}?".
-Return the full enriched markdown plus metadata.`,
-      prompt: stageA.markdown,
-    });
-
-    finalMarkdown = stageB.markdown;
-    description = stageB.description;
-    faqCount = stageB.faqCount;
-    entities = stageB.entities;
-  }
 
   // 6. Optionally store to XMC via Authoring GraphQL.
   //    Skipped when saveToSitecore=false (e.g. custom-field dialog — the host
