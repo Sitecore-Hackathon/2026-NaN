@@ -236,26 +236,26 @@ export function createKVStore(
 // Pre-configured stores
 // ---------------------------------------------------------------------------
 
-/** Store config for setup flag under /sitecore/system/Modules/AEO Helper/Setup */
+/** Store config for setup flag under /sitecore/system/Modules/LLMify/Setup */
 export const setupFlagStoreConfig: KVStoreConfig = {
   templateId: '{97D75760-CF8B-4740-810B-7727B564EF4D}',
   folderTemplateId: '{A87A00B1-E6DB-45AB-8B54-636FEC3B5523}',
   basePath: '/sitecore/system/Modules',
   pathSegments: [
-    { name: 'AEO Helper', icon: 'Office/32x32/window_gear.png' },
+    { name: 'LLMify', icon: 'Office/32x32/window_gear.png' },
     { name: 'Setup', icon: 'Office/32x32/window_gear.png' },
   ],
   valueField: 'Value',
   language: 'en',
 };
 
-/** Store config for API keys under /sitecore/system/Modules/AEO Helper/Api Keys */
+/** Store config for API keys under /sitecore/system/Modules/LLMify/Api Keys */
 export const apiKeyStoreConfig: KVStoreConfig = {
   templateId: '{97D75760-CF8B-4740-810B-7727B564EF4D}',
   folderTemplateId: '{A87A00B1-E6DB-45AB-8B54-636FEC3B5523}',
   basePath: '/sitecore/system/Modules',
   pathSegments: [
-    { name: 'AEO Helper', icon: 'Office/32x32/window_gear.png' },
+    { name: 'LLMify', icon: 'Office/32x32/window_gear.png' },
     { name: 'Api Keys', icon: 'Office/32x32/keys.png' },
   ],
   valueField: 'Value',
@@ -381,14 +381,14 @@ export function createJsonStore<T>(
   };
 }
 
-/** JSON store config for AEO Helper app config */
+/** JSON store config for LLMify app config */
 export const appConfigJsonStoreConfig: JsonStoreConfig = {
   templateId: '{97D75760-CF8B-4740-810B-7727B564EF4D}',
   folderTemplateId: '{A87A00B1-E6DB-45AB-8B54-636FEC3B5523}',
   basePath: '/sitecore/system/Modules',
   pathSegments: [
     {
-      name: 'AEO Helper', icon: 'Office/32x32/window_gear.png',
+      name: 'LLMify', icon: 'Office/32x32/window_gear.png',
     },
     { name: 'Config', icon: 'Office/32x32/window_gear.png', }
   ],

@@ -169,13 +169,19 @@ export async function addFieldsToTemplate(
   contextId: string,
   templateId: string,
   sectionName: string,
-  fields: Array<{ name: string; type: string }>
+  fields: Array<{ name: string; type: string, source?: string }>
 ): Promise<{ success: boolean; permissionDenied: boolean; error?: string }> {
   try {
     const { data: tplData, errors: tplErrors } = await gql<{
       item: {
         itemId: string;
-        children: { nodes: Array<{ name: string; itemId: string }> };
+        children: {
+          nodes: Array<{
+            name: string;
+            itemId: string;
+            children: { nodes: Array<{ name: string; itemId: string }> };
+          }>;
+        };
       } | null;
     }>(client, contextId, GQL_GET_TEMPLATE_CHILDREN, { templateId, language: 'en' });
 
@@ -185,6 +191,20 @@ export async function addFieldsToTemplate(
     }
     if (!tplData?.item) {
       return { success: false, permissionDenied: false, error: 'Template not found' };
+    }
+
+    // Collect all existing field names across all sections (case-insensitive)
+    const existingFieldNames = new Set<string>();
+    for (const section of tplData.item.children.nodes) {
+      for (const field of section.children?.nodes ?? []) {
+        existingFieldNames.add(field.name.toLowerCase());
+      }
+    }
+
+    // Only add fields that don't already exist
+    const fieldsToAdd = fields.filter((f) => !existingFieldNames.has(f.name.toLowerCase()));
+    if (fieldsToAdd.length === 0) {
+      return { success: true, permissionDenied: false };
     }
 
     // Find or create the section
@@ -212,13 +232,16 @@ export async function addFieldsToTemplate(
     }
 
     // Create each field under the section
-    for (const field of fields) {
+    for (const field of fieldsToAdd) {
       const { errors: fieldErrors } = await gql<unknown>(client, contextId, GQL_CREATE_ITEM, {
         name: field.name,
         templateId: TEMPLATE_FIELD_TEMPLATE_ID,
         parent: sectionId,
         language: 'en',
-        fields: [{ name: 'Type', value: field.type }],
+        fields: [
+          { name: 'Type', value: field.type, },
+          { name: 'Source', value: field.source || '' }
+        ],
       });
 
       if (fieldErrors?.length) {

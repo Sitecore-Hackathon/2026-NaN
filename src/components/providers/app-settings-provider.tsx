@@ -57,6 +57,7 @@ interface AppSettingsContextType {
   needsSetup: boolean;
   setNeedsSetup: (value: boolean) => void;
   markSetupComplete: () => Promise<void>;
+  wizardReady: boolean;
 }
 
 const AppSettingsContext = createContext<AppSettingsContextType | undefined>(
@@ -77,6 +78,7 @@ export function AppSettingsProvider({ children }: AppSettingsProviderProps) {
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const [wizardReady, setWizardReady] = useState(false);
 
   const sitecoreContextId = appContext?.resourceAccess?.[0]?.context?.preview;
 
@@ -96,6 +98,20 @@ export function AppSettingsProvider({ children }: AppSettingsProviderProps) {
     });
   }, [sitecoreContextId, client]);
 
+  // When setup is needed for the first time, auto-open settings so the user
+  // configures fields/API key before the setup wizard runs.
+  useEffect(() => {
+    if (needsSetup) {
+      setIsModalOpen(true);
+      setWizardReady(false);
+    }
+  }, [needsSetup]);
+
+  const handleModalOpenChange = useCallback((open: boolean) => {
+    setIsModalOpen(open);
+    if (!open && needsSetup) setWizardReady(true);
+  }, [needsSetup]);
+
   const saveSettings = useCallback(
     async (newConfig: AppConfig) => {
       if (!sitecoreContextId) throw new Error('Sitecore context ID is not defined');
@@ -105,6 +121,7 @@ export function AppSettingsProvider({ children }: AppSettingsProviderProps) {
 
       setConfig(newConfig);
       setIsModalOpen(false);
+      setWizardReady(true);
     },
     [client, sitecoreContextId]
   );
@@ -118,14 +135,15 @@ export function AppSettingsProvider({ children }: AppSettingsProviderProps) {
       // best-effort
     }
     setNeedsSetup(false);
+    setWizardReady(false);
   }, [client, sitecoreContextId]);
 
   return (
     <AppSettingsContext.Provider
-      value={{ config, setModalOpen: setIsModalOpen, saveSettings, needsSetup, setNeedsSetup, markSetupComplete }}
+      value={{ config, setModalOpen: setIsModalOpen, saveSettings, needsSetup, setNeedsSetup, markSetupComplete, wizardReady }}
     >
       {children}
-      <AppSettingsModal isOpen={isModalOpen} onOpenChange={setIsModalOpen} />
+      <AppSettingsModal isOpen={isModalOpen} onOpenChange={handleModalOpenChange} />
     </AppSettingsContext.Provider>
   );
 }
@@ -164,7 +182,7 @@ export function AppSettingsModal({ isOpen, onOpenChange }: AppSettingsModalProps
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className='sm:max-w-[425px]' onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>AEO Helper Settings</DialogTitle>
+          <DialogTitle>LLMify Settings</DialogTitle>
           <DialogDescription>
             Configure field names and crawl options.
           </DialogDescription>
@@ -240,6 +258,6 @@ export function useAppConfig(): AppConfig {
 }
 
 export function useAppSettings() {
-  const { setModalOpen, config, saveSettings, needsSetup, setNeedsSetup, markSetupComplete } = useAppSettingsInternal();
-  return { setModalOpen, config, saveSettings, needsSetup, setNeedsSetup, markSetupComplete };
+  const { setModalOpen, config, saveSettings, needsSetup, setNeedsSetup, markSetupComplete, wizardReady } = useAppSettingsInternal();
+  return { setModalOpen, config, saveSettings, needsSetup, setNeedsSetup, markSetupComplete, wizardReady };
 }

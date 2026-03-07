@@ -100,7 +100,7 @@ const LOADER_QUOTES = [
 ];
 
 function StandaloneExtension() {
-  const { setModalOpen, needsSetup, setNeedsSetup, markSetupComplete } = useAppSettings();
+  const { setModalOpen, needsSetup, setNeedsSetup, markSetupComplete, wizardReady } = useAppSettings();
   const { targetFieldName, metaFieldName, vercelAiGatewayApiKey } = useAppConfig();
   const sitecoreContextId = usePreviewContextId();
   const { getAccessTokenSilently } = useAuth();
@@ -578,7 +578,7 @@ function StandaloneExtension() {
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">AEO Helper</h1>
+            <h1 className="text-xl font-semibold tracking-tight">LLMify</h1>
             {selectedSite && !loadingPages && (
               <p className="text-sm text-muted-foreground mt-1">
                 {stats.total} pages ·{' '}
@@ -816,7 +816,7 @@ function StandaloneExtension() {
         )}
       </div>
 
-      {needsSetup && selectedSite && sitecoreContextId && (
+      {wizardReady && selectedSite && sitecoreContextId && (
         <SetupWizardDialog
           siteId={selectedSite.id}
           siteName={selectedSite.name}

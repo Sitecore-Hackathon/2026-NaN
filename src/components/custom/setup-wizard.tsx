@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { AlertCircle, CheckCircle2, Loader2, MinusCircle } from 'lucide-react';
-import { useMarketplaceClient } from '@/components/providers/marketplace';
+import { useAppContext, useMarketplaceClient } from '@/components/providers/marketplace';
 import { useAppConfig } from '@/components/providers/app-settings-provider';
 import {
   checkPageTemplateFields,
@@ -42,7 +42,6 @@ interface CheckData {
 
 export interface SetupWizardProps {
   siteId: string;
-  siteName: string;
   contextId: string;
   onComplete: () => void;
 }
@@ -146,7 +145,7 @@ function ManualInstructions({
           </li>
         )}
         <li>
-          Add a section <code className="bg-muted px-1 py-0.5 rounded">AEO Helper</code>
+          Add a section <code className="bg-muted px-1 py-0.5 rounded">LLMify</code>
         </li>
         {isPageStep ? (
           pageFields.map((f) => (
@@ -250,12 +249,12 @@ function StepCard({
 // Wizard
 // ---------------------------------------------------------------------------
 
-export function SetupWizardDialog({ siteId, siteName, contextId, onComplete }: SetupWizardProps) {
+export function SetupWizardDialog({ siteId, contextId, onComplete }: SetupWizardProps) {
   const client = useMarketplaceClient();
   const { targetFieldName, metaFieldName, llmFieldName } = useAppConfig();
-
-  const pageFields: Array<{ name: string; type: string }> = [
-    { name: targetFieldName, type: 'Multi-Line Text' },
+  const appContext = useAppContext();
+  const pageFields: Array<{ name: string; type: string, source?: string }> = [
+    { name: targetFieldName, type: 'Plugin', source: appContext.id ?? '' },
     { name: metaFieldName, type: 'Single-Line Text' },
   ];
 
@@ -318,7 +317,7 @@ export function SetupWizardDialog({ siteId, siteName, contextId, onComplete }: S
     }
     setStep1('running');
     setStep1Error(undefined);
-    const result = await addFieldsToTemplate(client, contextId, checkData.templateId, 'AEO Helper', pageFields);
+    const result = await addFieldsToTemplate(client, contextId, checkData.templateId, 'LLMify', pageFields);
     if (result.permissionDenied) {
       setStep1('permission_denied');
       setStep1Error(result.error);
@@ -345,7 +344,7 @@ export function SetupWizardDialog({ siteId, siteName, contextId, onComplete }: S
       client,
       contextId,
       checkData.settingsTemplateId,
-      'AEO Helper',
+      'LLMify',
       [{ name: llmFieldName, type: 'Multi-Line Text' }]
     );
     if (result.permissionDenied) {
@@ -384,7 +383,7 @@ export function SetupWizardDialog({ siteId, siteName, contextId, onComplete }: S
     <Dialog open onOpenChange={(open) => !open && onComplete()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>AEO Helper Setup</DialogTitle>
+          <DialogTitle>LLMify Setup</DialogTitle>
           <DialogDescription>
             One-time configuration to prepare your site&apos;s templates for AEO content generation.
           </DialogDescription>

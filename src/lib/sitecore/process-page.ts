@@ -1,7 +1,6 @@
 import TurndownService from 'turndown';
 import { generateText, Output } from 'ai';
 import { createGateway } from '@ai-sdk/gateway';
-import { z } from 'zod';
 import { experimental_XMC } from '@sitecore-marketplace-sdk/xmc';
 
 export class VersionNotFoundError extends Error {
