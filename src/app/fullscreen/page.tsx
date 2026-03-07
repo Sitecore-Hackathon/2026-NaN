@@ -277,6 +277,7 @@ const processOnePage = async (pageId: string) => {
           siteName: selectedSite.name,
           siteId: selectedSite.id,
           targetField: targetFieldName,
+          language: selectedLanguage,
         }),
       });
 

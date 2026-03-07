@@ -1,6 +1,17 @@
 import { experimental_XMC } from '@sitecore-marketplace-sdk/xmc';
 import { listAllPages } from '@/lib/sitecore/pages';
 
+const GQL_ADD_VERSION = `
+  mutation AddLanguageVersion($itemId: ID!, $language: String!) {
+    addVersion(input: {
+      itemId: $itemId,
+      language: $language
+    }) {
+      item { itemId }
+    }
+  }
+`;
+
 const GQL_UPDATE_LLM_FIELD = `
   mutation UpdateLlmField($itemId: ID!, $language: String!, $value: String!) {
     updateItem(input: {
@@ -18,7 +29,8 @@ export async function generateAndStoreLlmTxt(
   contextId: string,
   siteName: string,
   siteId: string,
-  targetFieldName: string
+  targetFieldName: string,
+  language: string
 ): Promise<{ success: boolean; message: string }> {
   try {
     // 1. Get all pages for the site
@@ -46,8 +58,6 @@ export async function generateAndStoreLlmTxt(
 
     // We still need to fetch the actual markdown content since listAllPages only checks if it exists
     // (targetValue in listAllPages is used for status, but not returned in PageSummary)
-    const language = siteResult.data?.languages?.[0] ?? 'en';
-
     for (const page of processedPages) {
       const itemResult = await client.authoring.graphql({
         body: {
@@ -100,6 +110,37 @@ export async function generateAndStoreLlmTxt(
 
     if (!siteGroupingId) {
       return { success: false, message: 'Could not find Site Grouping ID (siteDefinitionID) in site properties.' };
+    }
+
+    // Check if the language version exists
+    const groupingVersionResult = await client.authoring.graphql({
+      body: {
+        query: `
+          query GetSiteGroupingVersion($itemId: ID!, $language: String!) {
+            item(where: { itemId: $itemId, language: $language }) {
+              language { name }
+              version
+            }
+          }
+        `,
+        variables: { itemId: siteGroupingId, language },
+      },
+      query: { sitecoreContextId: contextId },
+    });
+
+    const versionData = (groupingVersionResult.data?.data as any)?.item;
+
+    // If we get an item back, but the language name doesn't match or version is 0,
+    // it usually means it fell back to another language or doesn't have this version.
+    // In GraphQL, querying a non-existent language version often returns null for the item or version 0.
+    if (!versionData || versionData.version === 0) {
+      await client.authoring.graphql({
+        body: {
+          query: GQL_ADD_VERSION,
+          variables: { itemId: siteGroupingId, language },
+        },
+        query: { sitecoreContextId: contextId },
+      });
     }
 
     await client.authoring.graphql({

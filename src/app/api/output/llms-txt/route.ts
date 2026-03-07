@@ -14,9 +14,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Access token is required' }, { status: 401 });
   }
 
-  const { siteName, siteId, targetField } = await request.json();
+  const { siteName, siteId, targetField, language } = await request.json();
 
-  if (!siteName || !siteId || !targetField) {
+  if (!siteName || !siteId || !targetField || !language) {
     return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
   }
 
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   });
 
   try {
-    const result = await generateAndStoreLlmTxt(xmcClient, contextId, siteName, siteId, targetField);
+    const result = await generateAndStoreLlmTxt(xmcClient, contextId, siteName, siteId, targetField, language);
     console.log('result', JSON.stringify(result));
     if (result.success) {
       return NextResponse.json(result);
