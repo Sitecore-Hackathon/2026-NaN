@@ -10,7 +10,7 @@ Best Marketplace App
 ## Description
 
 ### Module Purpose
-**AEO Helper** (Answer Engine Optimization, also known as Generative Engine Optimization) is a Sitecore Marketplace extension that leverages artificial intelligence to automatically convert Sitecore pages' HTML content into clean, structured Markdown, and to generate LLMs.txt file. This tool enables content teams to prepare their Sitecore content for AI-powered applications, documentation generation, and LLM training by providing streamlined content transformation capabilities.
+**LLMify** (Generative Engine Optimization helper) is a Sitecore Marketplace extension that leverages artificial intelligence to automatically convert Sitecore pages' HTML content into clean, structured Markdown, and to generate LLMs.txt file. This tool enables content teams to prepare their Sitecore content for AI-powered applications, documentation generation, and LLM training by providing streamlined content transformation capabilities.
 
 ### Problem Solved
 Modern content management increasingly requires content to be available in machine-readable formats for AI applications, documentation systems, and large language model (LLM) training. However, Sitecore's native content is stored as rich HTML, which is difficult for AI systems to process effectively. Content teams face several challenges:
@@ -22,7 +22,7 @@ Modern content management increasingly requires content to be available in machi
 5. **Multi language support**: Support all available website languages in Sitecore
 
 ### How This Module Solves It
-AEO Helper addresses these challenges through three integrated extension points:
+LLMify addresses these challenges through three integrated extension points:
 
 1. **Fullscreen Batch Processing Dashboard**: Provides a comprehensive interface to select sites and languages, view all pages with their processing status, and batch-process hundreds of pages with a single click. Includes progress tracking, error handling, and retry capabilities.
 
@@ -68,7 +68,7 @@ AEO Helper addresses these challenges through three integrated extension points:
 ### Services Required
 
 - **AI Gateway API Key**: Required for AI-powered content conversion. Configured via the settings modal and stored in Sitecore.
-- **SSL Certificates**: For local development, self-signed certificates at `./certificates/aeo.local-key.pem` and `./certificates/aeo.local.pem` are required for HTTPS.
+- **SSL Certificates**: For local development, self-signed certificates at `./certificates/llmify.local-key.pem` and `./certificates/llmify.local.pem` are required for HTTPS.
 
 ## Installation instructions
 
@@ -94,24 +94,24 @@ Create self-signed certificates for HTTPS development:
 mkdir -p certificates
 
 # Generate self-signed certificate (using openssl):
-openssl req -x509 -newkey rsa:2048 -nodes -keyout certificates/aeo.local-key.pem -out certificates/aeo.local.pem -days 365 -subj "/CN=aeo.local"
+openssl req -x509 -newkey rsa:2048 -nodes -keyout certificates/llmify.local-key.pem -out certificates/llmify.local.pem -days 365 -subj "/CN=llmify.local"
 
 or using makecert:
-mkcert -key-file ./certificates/aeo.local-key.pem -cert-file ./certificates/aeo.local.pem aeo.local 127.0.0.1
+mkcert -key-file ./certificates/llmify.local-key.pem -cert-file ./certificates/llmify.local.pem llmify.local 127.0.0.1
 ```
 
 ### Step 4: Add Local Hosts Entry
 
-Add `aeo.local` to your system's hosts file:
+Add `llmify.local` to your system's hosts file:
 
 **Windows** (`C:\Windows\System32\drivers\etc\hosts`):
 ```
-127.0.0.1 aeo.local
+127.0.0.1 llmify.local
 ```
 
 **macOS/Linux** (`/etc/hosts`):
 ```
-127.0.0.1 aeo.local
+127.0.0.1 llmify.local
 ```
 
 ### Step 5: Start Development Server
@@ -120,7 +120,7 @@ Add `aeo.local` to your system's hosts file:
 npm run dev
 ```
 
-The application will be available at `https://aeo.local` with hot reloading enabled.
+The application will be available at `https://llmify.local` with hot reloading enabled.
 
 ### Step 6: Deploy to Sitecore Marketplace
 
@@ -140,7 +140,7 @@ The application will be available at `https://aeo.local` with hot reloading enab
 
 #### AI Gateway Configuration
 
-1. Open the AEO Helper application in Sitecore
+1. Open the LLMify application in Sitecore
 2. Click the Settings icon in the top-right corner
 3. Enter your AI Gateway API Key
 4. Configure target field names (default: `AiMarkdown`, `AiMarkdownMeta`)
@@ -168,8 +168,9 @@ The fullscreen extension provides a comprehensive interface for bulk content con
 2. **Site Selector**: Choose which Sitecore site to process
 3. **Language Selector**: Filter pages by language version
 4. **Generate Button**: Start batch processing of all pages
-5. **LLM.TXT Button**: Generate aggregated AI-ready documentation
-6. **Pages Table**: View individual page status and process individually
+5. **Generate LLM.TXT Button**: Generate aggregated AI-ready documentation
+6. **Review / Edit LLM.TXT**: Manual editing of LLM.txt
+7. **Pages Table**: View individual page status and process individually
 
 #### Processing Workflow
 
