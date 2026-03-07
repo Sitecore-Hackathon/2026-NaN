@@ -7,185 +7,190 @@ import React, {
   useEffect,
   useState,
 } from 'react';
-import { AppSettingsModal } from '@/components/custom/api-key-modal';
 import {
   useAppContext,
   useMarketplaceClient,
 } from '@/components/providers/marketplace';
-import { getApiKey, saveApiKey } from '@/lib/sitecore/storage/api-key-storage';
+import {
+  appConfigJsonStoreConfig,
+  createJsonStore,
+} from '@/lib/sitecore/storage/api-key-storage';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
-/**
- * Supported API key names
- */
-export type ApiKey = 'vercel' | 'openai' | 'anthropic' | 'google' | 'exa';
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-export interface LocalSettings extends Record<string, unknown> {
-  needsToolApproval: boolean;
-  sitecoreToolsExecution: 'frontend' | 'backend';
+export interface AppConfig {
+  /** Field name to write AEO markdown to (e.g. "AiMarkdown") */
+  targetFieldName: string;
+  /** Field name to write JSON metadata to (e.g. "AiMarkdownMeta") */
+  metaFieldName: string;
 }
 
+const defaultConfig: AppConfig = {
+  targetFieldName: 'AiMarkdown',
+  metaFieldName: 'AiMarkdownMeta',
+};
+
 interface AppSettingsContextType {
-  keys: Record<ApiKey, string>;
-  localSettings: LocalSettings;
+  config: AppConfig;
   setModalOpen: (open: boolean) => void;
-  saveSettings: (
-    newKeys: Record<string, string>,
-    newLocalSettings: LocalSettings
-  ) => Promise<void>;
+  saveSettings: (newConfig: AppConfig) => Promise<void>;
 }
 
 const AppSettingsContext = createContext<AppSettingsContextType | undefined>(
   undefined
 );
 
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
+
 export interface AppSettingsProviderProps {
-  requestedKeys: ApiKey[];
   children: React.ReactNode;
 }
 
-export function AppSettingsProvider({
-  requestedKeys,
-  children,
-}: AppSettingsProviderProps) {
+export function AppSettingsProvider({ children }: AppSettingsProviderProps) {
   const client = useMarketplaceClient();
   const appContext = useAppContext();
-  const [keys, setKeys] = useState<Record<ApiKey, string>>(
-    {} as Record<ApiKey, string>
-  );
-  const [localSettings, setLocalSettings] = useState<LocalSettings>(() => ({
-    needsToolApproval: true,
-    sitecoreToolsExecution: 'frontend',
-    ...JSON.parse(localStorage.getItem('marketers-chat-settings') || '{}'),
-  }));
-  const [loading, setLoading] = useState(true);
+  const [config, setConfig] = useState<AppConfig>(defaultConfig);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const sitecoreContextId = appContext?.resourceAccess?.[0]?.context?.preview;
 
-  // Load API keys from Sitecore
   useEffect(() => {
     if (!sitecoreContextId) return;
 
-    const fetchKeys = async () => {
-      const results = await Promise.all(
-        requestedKeys.map(async (name) => {
-          const value = await getApiKey(client, sitecoreContextId, name);
-          return { name, value: value || '' };
-        })
-      );
-
-      const newKeys = results.reduce(
-        (acc, { name, value }) => {
-          acc[name] = value;
-          return acc;
-        },
-        {} as Record<ApiKey, string>
-      );
-
-      setKeys(newKeys);
-      setLoading(false);
-
-      // If important keys are missing, show modal (e.g. vercel)
-      if (requestedKeys.includes('vercel') && !newKeys['vercel']) {
-        setIsModalOpen(true);
-      }
-    };
-
-    fetchKeys();
-  }, [sitecoreContextId, client, requestedKeys]);
+    const store = createJsonStore<AppConfig>(client, sitecoreContextId, appConfigJsonStoreConfig);
+    store.get().then((saved) => {
+      if (saved) setConfig({ ...defaultConfig, ...saved });
+    });
+  }, [sitecoreContextId, client]);
 
   const saveSettings = useCallback(
-    async (
-      newKeys: Record<string, string>,
-      newLocalSettings: LocalSettings
-    ) => {
-      if (!sitecoreContextId) {
-        throw new Error('Sitecore context ID is not defined');
-      }
-      // Save API keys to Sitecore
-      const savePromises = Object.entries(newKeys).map(
-        async ([name, value]) => {
-          if (keys[name as ApiKey] !== value) {
-            return saveApiKey(client, sitecoreContextId, name, value);
-          }
-          return true;
-        }
-      );
+    async (newConfig: AppConfig) => {
+      if (!sitecoreContextId) throw new Error('Sitecore context ID is not defined');
 
-      await Promise.all(savePromises);
-      setKeys((prev) => ({ ...prev, ...newKeys }));
+      const store = createJsonStore<AppConfig>(client, sitecoreContextId, appConfigJsonStoreConfig);
+      await store.set(newConfig);
 
-      // Save local settings to localStorage
-      localStorage.setItem(
-        'marketers-chat-settings',
-        JSON.stringify(newLocalSettings)
-      );
-      setLocalSettings(newLocalSettings);
-
+      setConfig(newConfig);
       setIsModalOpen(false);
     },
-    [client, sitecoreContextId, keys]
+    [client, sitecoreContextId]
   );
-
-  // Don't render until we know the state of the keys (at least for initial load)
-  if (loading && sitecoreContextId) return null;
 
   return (
     <AppSettingsContext.Provider
-      value={{
-        keys,
-        localSettings,
-        setModalOpen: setIsModalOpen,
-        saveSettings,
-      }}
+      value={{ config, setModalOpen: setIsModalOpen, saveSettings }}
     >
       {children}
-      <AppSettingsModal
-        isOpen={isModalOpen}
-        onOpenChange={setIsModalOpen}
-        keys={keys}
-        localSettings={localSettings}
-        onSave={saveSettings}
-        isClosable={requestedKeys.every((k) => !!keys[k])}
-      />
+      <AppSettingsModal isOpen={isModalOpen} onOpenChange={setIsModalOpen} />
     </AppSettingsContext.Provider>
   );
 }
 
-/**
- * Hook to access an API key by name.
- */
-export function useApiKey(name: ApiKey): string | undefined {
-  const context = useContext(AppSettingsContext);
-  if (context === undefined) {
-    throw new Error('useApiKey must be used within an AppSettingsProvider');
-  }
-  return context.keys[name];
+// ---------------------------------------------------------------------------
+// Modal
+// ---------------------------------------------------------------------------
+
+interface AppSettingsModalProps {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
-/**
- * Hook to access local settings.
- */
-export function useLocalSettings() {
+export function AppSettingsModal({ isOpen, onOpenChange }: AppSettingsModalProps) {
+  const { config, saveSettings } = useAppSettingsInternal();
+  const [temp, setTemp] = useState<AppConfig>(config);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) setTemp(config);
+  }, [isOpen, config]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await saveSettings(temp);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const set = <K extends keyof AppConfig>(key: K, value: AppConfig[K]) =>
+    setTemp((prev) => ({ ...prev, [key]: value }));
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className='sm:max-w-[425px]'>
+        <DialogHeader>
+          <DialogTitle>AEO Helper Settings</DialogTitle>
+          <DialogDescription>
+            Configure field names and crawl options.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className='grid gap-4 py-4'>
+          <div className='grid grid-cols-2 gap-3'>
+            <div className='space-y-2'>
+              <Label htmlFor='cfg-target'>Target field name</Label>
+              <Input
+                id='cfg-target'
+                placeholder='AiMarkdown'
+                value={temp.targetFieldName}
+                onChange={(e) => set('targetFieldName', e.target.value)}
+              />
+            </div>
+            <div className='space-y-2'>
+              <Label htmlFor='cfg-meta'>Meta field name</Label>
+              <Input
+                id='cfg-meta'
+                placeholder='AiMarkdownMeta'
+                value={temp.metaFieldName}
+                onChange={(e) => set('metaFieldName', e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button onClick={handleSave} disabled={isSaving}>
+            {isSaving ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hooks
+// ---------------------------------------------------------------------------
+
+function useAppSettingsInternal() {
   const context = useContext(AppSettingsContext);
   if (context === undefined) {
-    throw new Error(
-      'useLocalSettings must be used within an AppSettingsProvider'
-    );
+    throw new Error('Must be used within an AppSettingsProvider');
   }
-  return context.localSettings;
+  return context;
+}
+
+export function useAppConfig(): AppConfig {
+  return useAppSettingsInternal().config;
 }
 
 export function useAppSettings() {
-  const context = useContext(AppSettingsContext);
-  if (context === undefined) {
-    throw new Error(
-      'useAppSettings must be used within an AppSettingsProvider'
-    );
-  }
-  return {
-    setModalOpen: context.setModalOpen,
-    localSettings: context.localSettings,
-    saveSettings: context.saveSettings,
-  };
+  const { setModalOpen, config, saveSettings } = useAppSettingsInternal();
+  return { setModalOpen, config, saveSettings };
 }

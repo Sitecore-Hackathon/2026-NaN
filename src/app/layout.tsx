@@ -32,7 +32,7 @@ export default function RootLayout({
       >
         <MarketplaceProvider>
           <AuthProvider>
-            <AppSettingsProvider requestedKeys={['vercel', 'exa']}>
+            <AppSettingsProvider>
               {children}
             </AppSettingsProvider>
           </AuthProvider>

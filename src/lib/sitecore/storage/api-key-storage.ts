@@ -1,366 +1,406 @@
 import { ClientSDK } from '@sitecore-marketplace-sdk/client';
 
-type PathSegment = {
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface KVStorePathSegment {
   name: string;
   icon?: string;
-};
-
-const config = {
-  templateId: '{97D75760-CF8B-4740-810B-7727B564EF4D}', // Template ID for API Key items
-  folderTemplateId: '{A87A00B1-E6DB-45AB-8B54-636FEC3B5523}',
-  basePath: '/sitecore/system/Modules', // Base path that always exists
-  pathSegments: [
-    { name: 'Editors Chat', icon: 'Office/32x32/window_gear.png' },
-    { name: 'Api Keys', icon: 'Office/32x32/keys.png' },
-  ] as PathSegment[],
-  field: 'Value', // Field name where the key is stored
-  language: 'en',
-  apiKeyIcon: 'Office/32x32/key.png', // Icon for individual API key items (empty by default)
-};
-
-const queries = {
-  getItem: `query GetItem($path: String!, $language: String!) {
-    item(where: { path: $path, language: $language }) {
-        itemId
-        name
-        fields(excludeStandardFields: true) {
-            nodes {
-                name
-                value
-            }
-        }
-    }
-}`,
-  updateItem: `mutation UpdateItem(
-    $itemId: ID!
-    $language: String!
-    $fields: [FieldValueInput]!
-) {
-    updateItem(input: { itemId: $itemId, language: $language, fields: $fields }) {
-        item {
-            itemId
-        }
-    }
 }
-`,
-  createItem: `mutation CreateItem(
+
+export interface KVStoreConfig {
+  /** Template ID for leaf (value) items */
+  templateId: string;
+  /** Template ID for folder items */
+  folderTemplateId: string;
+  /** Sitecore path that is guaranteed to exist (e.g. "/sitecore/system/Modules") */
+  basePath: string;
+  /** Folder segments to create/traverse below basePath */
+  pathSegments: KVStorePathSegment[];
+  /** Field name on the item that holds the value */
+  valueField: string;
+  /** Language for all GraphQL operations */
+  language?: string;
+  /** Icon for individual value items */
+  itemIcon?: string;
+}
+
+export interface KVStore {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// GraphQL fragments (shared)
+// ---------------------------------------------------------------------------
+
+const GQL_GET_ITEM = `
+  query GetItem($path: String!, $language: String!) {
+    item(where: { path: $path, language: $language }) {
+      itemId
+      name
+      fields(excludeStandardFields: true) {
+        nodes { name value }
+      }
+    }
+  }
+`;
+
+const GQL_UPDATE_ITEM = `
+  mutation UpdateItem($itemId: ID!, $language: String!, $fields: [FieldValueInput]!) {
+    updateItem(input: { itemId: $itemId, language: $language, fields: $fields }) {
+      item { itemId }
+    }
+  }
+`;
+
+const GQL_CREATE_ITEM = `
+  mutation CreateItem(
     $name: String!
     $templateId: ID!
     $parent: ID!
     $language: String!
     $fields: [FieldValueInput!]!
-) {
+  ) {
     createItem(
-        input: {
-            name: $name
-            templateId: $templateId
-            parent: $parent
-            language: $language
-            fields: $fields
-        }
+      input: { name: $name, templateId: $templateId, parent: $parent, language: $language, fields: $fields }
     ) {
-        item {
-            itemId
-        }
+      item { itemId }
     }
-}`,
-};
+  }
+`;
 
-/**
- * Simple mutex to prevent race conditions during path creation
- */
-class PathCreationMutex {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+type GraphQLResult<T> = { data?: { data?: T } };
+
+async function gql<T>(
+  client: ClientSDK,
+  contextId: string,
+  query: string,
+  variables: Record<string, unknown>
+): Promise<T | null> {
+  const result = (await client.mutate('xmc.authoring.graphql', {
+    params: {
+      body: { query, variables },
+      query: { sitecoreContextId: contextId },
+    },
+  })) as GraphQLResult<T>;
+  return result?.data?.data ?? null;
+}
+
+/** Simple mutex to prevent race conditions during path creation */
+class Mutex {
   private queue: Promise<unknown> = Promise.resolve();
-
-  async lock<T>(fn: () => Promise<T>): Promise<T> {
-    const previous = this.queue;
-    let resolve!: (value: unknown) => void;
-
-    this.queue = new Promise((r) => (resolve = r));
-
-    try {
-      await previous;
-      return await fn();
-    } finally {
-      resolve(undefined);
-    }
+  run<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(fn);
+    this.queue = next.catch(() => { });
+    return next;
   }
 }
 
-const pathMutex = new PathCreationMutex();
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
 
 /**
- * Computes the full storage path from config
+ * Creates a key-value store backed by Sitecore XMC content items.
+ *
+ * Each key maps to a single item whose value is stored in `cfg.valueField`.
+ * Folder structure is created on demand.
+ *
+ * @example
+ * const store = createKVStore(client, contextId, apiKeyStoreConfig);
+ * await store.set('vercel', 'v1:...');
+ * const key = await store.get('vercel');
  */
-function getStorageRoot(): string {
-  const segments = config.pathSegments.map((s) => s.name).join('/');
-  return `${config.basePath}/${segments}`;
-}
-
-/**
- * Ensures that the storage path exists, creating segments if necessary
- * Throws an error if path creation fails
- */
-async function ensurePathExists(
+export function createKVStore(
   client: ClientSDK,
-  sitecoreContextId: string
-): Promise<string> {
-  // Use mutex to prevent race conditions when creating paths concurrently
-  return pathMutex.lock(async () => {
-    let currentPath = config.basePath;
-    let parentId: string | null = null;
+  contextId: string,
+  cfg: KVStoreConfig
+): KVStore {
+  const lang = cfg.language ?? 'en';
+  const mutex = new Mutex();
 
-    // Get the base path item ID
-    const baseResult = await client.mutate('xmc.authoring.graphql', {
-      params: {
-        body: {
-          query: queries.getItem,
-          variables: { path: currentPath, language: config.language },
-        },
-        query: { sitecoreContextId },
-      },
-    });
+  const rootPath = [cfg.basePath, ...cfg.pathSegments.map((s) => s.name)].join(
+    '/'
+  );
 
-    const baseData = baseResult?.data?.data as { item: { itemId: string } };
-    if (!baseData?.item?.itemId) {
-      throw new Error(`Base path does not exist: ${config.basePath}`);
-    }
+  /** Ensures all path segments exist; returns the parent item ID */
+  async function ensureRoot(): Promise<string> {
+    return mutex.run(async () => {
+      const base = await gql<{ item: { itemId: string } }>(
+        client,
+        contextId,
+        GQL_GET_ITEM,
+        { path: cfg.basePath, language: lang }
+      );
+      if (!base?.item?.itemId) {
+        throw new Error(`Base path does not exist: ${cfg.basePath}`);
+      }
 
-    parentId = baseData.item.itemId;
+      let parentId = base.item.itemId;
+      let currentPath = cfg.basePath;
 
-    // Check/create each path segment
-    for (const segment of config.pathSegments) {
-      currentPath += `/${segment.name}`;
+      for (const segment of cfg.pathSegments) {
+        currentPath += `/${segment.name}`;
+        const existing = await gql<{ item: { itemId: string } }>(
+          client,
+          contextId,
+          GQL_GET_ITEM,
+          { path: currentPath, language: lang }
+        );
 
-      // Check if this segment exists
-      const checkResult = await client.mutate('xmc.authoring.graphql', {
-        params: {
-          body: {
-            query: queries.getItem,
-            variables: { path: currentPath, language: config.language },
-          },
-          query: { sitecoreContextId },
-        },
-      });
-
-      const checkData = checkResult?.data?.data as { item: { itemId: string } };
-      if (checkData?.item?.itemId) {
-        parentId = checkData.item.itemId;
-      } else {
-        // Create this segment with its icon
-        const fields: { name: string; value: string }[] = [];
-        if (segment.icon) {
-          fields.push({ name: '__Icon', value: segment.icon });
-        }
-
-        const createResult = await client.mutate('xmc.authoring.graphql', {
-          params: {
-            body: {
-              query: queries.createItem,
-              variables: {
-                name: segment.name,
-                templateId: config.folderTemplateId,
-                parent: parentId,
-                language: config.language,
-                fields,
-              },
-            },
-            query: { sitecoreContextId },
-          },
-        });
-
-        const createData = createResult?.data?.data as {
-          createItem: { item: { itemId: string } };
-        };
-        parentId = createData?.createItem?.item?.itemId;
-        if (!parentId) {
-          throw new Error(`Failed to create path segment: ${segment.name}`);
+        if (existing?.item?.itemId) {
+          parentId = existing.item.itemId;
+        } else {
+          const fields = segment.icon
+            ? [{ name: '__Icon', value: segment.icon }]
+            : [];
+          const created = await gql<{
+            createItem: { item: { itemId: string } };
+          }>(client, contextId, GQL_CREATE_ITEM, {
+            name: segment.name,
+            templateId: cfg.folderTemplateId,
+            parent: parentId,
+            language: lang,
+            fields,
+          });
+          const id = created?.createItem?.item?.itemId;
+          if (!id) throw new Error(`Failed to create folder: ${segment.name}`);
+          parentId = id;
         }
       }
-    }
 
-    if (!parentId) {
-      throw new Error('Failed to create storage path: parentId is null');
-    }
+      return parentId;
+    });
+  }
 
-    return parentId;
-  });
+  return {
+    async get(key: string): Promise<string | null> {
+      try {
+        const data = await gql<{
+          item: { fields: { nodes: { name: string; value: string }[] } };
+        }>(client, contextId, GQL_GET_ITEM, {
+          path: `${rootPath}/${key}`,
+          language: lang,
+        });
+        return (
+          data?.item?.fields?.nodes?.find((f) => f.name === cfg.valueField)
+            ?.value ?? null
+        );
+      } catch {
+        return null;
+      }
+    },
+
+    async set(key: string, value: string): Promise<void> {
+      const parentId = await ensureRoot();
+      const itemPath = `${rootPath}/${key}`;
+
+      const existing = await gql<{ item: { itemId: string } }>(
+        client,
+        contextId,
+        GQL_GET_ITEM,
+        { path: itemPath, language: lang }
+      );
+
+      if (existing?.item?.itemId) {
+        await gql(client, contextId, GQL_UPDATE_ITEM, {
+          itemId: existing.item.itemId,
+          language: lang,
+          fields: [{ name: cfg.valueField, value }],
+        });
+      } else {
+        const fields: { name: string; value: string }[] = [
+          { name: cfg.valueField, value },
+        ];
+        if (cfg.itemIcon) fields.push({ name: '__Icon', value: cfg.itemIcon });
+
+        await gql(client, contextId, GQL_CREATE_ITEM, {
+          name: key,
+          templateId: cfg.templateId,
+          parent: parentId,
+          language: lang,
+          fields,
+        });
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Pre-configured stores
+// ---------------------------------------------------------------------------
+
+/** Store config for API keys under /sitecore/system/Modules/AEO Helper/Api Keys */
+export const apiKeyStoreConfig: KVStoreConfig = {
+  templateId: '{97D75760-CF8B-4740-810B-7727B564EF4D}',
+  folderTemplateId: '{A87A00B1-E6DB-45AB-8B54-636FEC3B5523}',
+  basePath: '/sitecore/system/Modules',
+  pathSegments: [
+    { name: 'AEO Helper', icon: 'Office/32x32/window_gear.png' },
+    { name: 'Api Keys', icon: 'Office/32x32/keys.png' },
+  ],
+  valueField: 'Value',
+  language: 'en',
+  itemIcon: 'Office/32x32/key.png',
+};
+
+// ---------------------------------------------------------------------------
+// JSON Store — stores one object as JSON in a single Sitecore item
+// ---------------------------------------------------------------------------
+
+export interface JsonStoreConfig {
+  /** Template ID for the single value item */
+  templateId: string;
+  /** Template ID for folder items */
+  folderTemplateId: string;
+  /** Sitecore path that is guaranteed to exist */
+  basePath: string;
+  /** Folder segments to create/traverse below basePath */
+  pathSegments: KVStorePathSegment[];
+  /** Name of the single item that holds the JSON value */
+  itemName: string;
+  /** Field on that item containing the JSON string */
+  valueField: string;
+  language?: string;
+}
+
+export interface JsonStore<T> {
+  get(): Promise<T | null>;
+  set(value: T): Promise<void>;
 }
 
 /**
- * Fetches an API key from Sitecore using GraphQL
+ * Creates a store that persists a single object as JSON in one Sitecore item.
+ *
+ * @example
+ * const store = createJsonStore<AppConfig>(client, contextId, appConfigJsonStoreConfig);
+ * await store.set({ targetFieldName: 'AiMarkdown', metaFieldName: 'AiMarkdownMeta' });
+ * const cfg = await store.get();
  */
+export function createJsonStore<T>(
+  client: ClientSDK,
+  contextId: string,
+  cfg: JsonStoreConfig
+): JsonStore<T> {
+  const lang = cfg.language ?? 'en';
+  const mutex = new Mutex();
+
+  const folderPath = [cfg.basePath, ...cfg.pathSegments.map((s) => s.name)].join('/');
+  const itemPath = `${folderPath}/${cfg.itemName}`;
+
+  async function ensureFolder(): Promise<string> {
+    return mutex.run(async () => {
+      const base = await gql<{ item: { itemId: string } }>(
+        client, contextId, GQL_GET_ITEM, { path: cfg.basePath, language: lang }
+      );
+      if (!base?.item?.itemId) {
+        throw new Error(`Base path does not exist: ${cfg.basePath}`);
+      }
+
+      let parentId = base.item.itemId;
+      let currentPath = cfg.basePath;
+
+      for (const segment of cfg.pathSegments) {
+        currentPath += `/${segment.name}`;
+        const existing = await gql<{ item: { itemId: string } }>(
+          client, contextId, GQL_GET_ITEM, { path: currentPath, language: lang }
+        );
+        if (existing?.item?.itemId) {
+          parentId = existing.item.itemId;
+        } else {
+          const fields = segment.icon ? [{ name: '__Icon', value: segment.icon }] : [];
+          const created = await gql<{ createItem: { item: { itemId: string } } }>(
+            client, contextId, GQL_CREATE_ITEM,
+            { name: segment.name, templateId: cfg.folderTemplateId, parent: parentId, language: lang, fields }
+          );
+          const id = created?.createItem?.item?.itemId;
+          if (!id) throw new Error(`Failed to create folder: ${segment.name}`);
+          parentId = id;
+        }
+      }
+      return parentId;
+    });
+  }
+
+  return {
+    async get(): Promise<T | null> {
+      try {
+        const data = await gql<{
+          item: { fields: { nodes: { name: string; value: string }[] } };
+        }>(client, contextId, GQL_GET_ITEM, { path: itemPath, language: lang });
+        const raw = data?.item?.fields?.nodes?.find((f) => f.name === cfg.valueField)?.value;
+        return raw ? (JSON.parse(raw) as T) : null;
+      } catch {
+        return null;
+      }
+    },
+
+    async set(value: T): Promise<void> {
+      const parentId = await ensureFolder();
+      const json = JSON.stringify(value);
+
+      const existing = await gql<{ item: { itemId: string } }>(
+        client, contextId, GQL_GET_ITEM, { path: itemPath, language: lang }
+      );
+
+      if (existing?.item?.itemId) {
+        await gql(client, contextId, GQL_UPDATE_ITEM, {
+          itemId: existing.item.itemId,
+          language: lang,
+          fields: [{ name: cfg.valueField, value: json }],
+        });
+      } else {
+        await gql(client, contextId, GQL_CREATE_ITEM, {
+          name: cfg.itemName,
+          templateId: cfg.templateId,
+          parent: parentId,
+          language: lang,
+          fields: [{ name: cfg.valueField, value: json }],
+        });
+      }
+    },
+  };
+}
+
+/** JSON store config for AEO Helper app config */
+export const appConfigJsonStoreConfig: JsonStoreConfig = {
+  templateId: '{97D75760-CF8B-4740-810B-7727B564EF4D}',
+  folderTemplateId: '{A87A00B1-E6DB-45AB-8B54-636FEC3B5523}',
+  basePath: '/sitecore/system/Modules',
+  pathSegments: [
+    {
+      name: 'AEO Helper', icon: 'Office/32x32/window_gear.png',
+    },
+    { name: 'Config', icon: 'Office/32x32/window_gear.png', }
+  ],
+  itemName: 'Config',
+  valueField: 'Value',
+  language: 'en',
+};
+
+// ---------------------------------------------------------------------------
+// Backwards-compatible helpers (used by app-settings-provider)
+// ---------------------------------------------------------------------------
+
 export async function getApiKey(
   client: ClientSDK,
-  sitecoreContextId: string,
+  contextId: string,
   name: string
 ): Promise<string | null> {
-  try {
-    const itemPath = `${getStorageRoot()}/${name}`;
-    const result = await client.mutate('xmc.authoring.graphql', {
-      params: {
-        body: {
-          query: queries.getItem,
-          variables: {
-            path: itemPath,
-            language: config.language,
-          },
-        },
-        query: {
-          sitecoreContextId,
-        },
-      },
-    });
-
-    if (result?.data?.data) {
-      const data = result.data?.data as {
-        item: { fields: { nodes: { name: string; value: string }[] } };
-      };
-      if (data?.item?.fields) {
-        const field = data.item.fields?.nodes?.find(
-          (f: { name: string; value: string }) => f.name === config.field
-        );
-        if (field?.value) {
-          return field.value as string;
-        }
-      }
-    }
-
-    return null;
-  } catch (error) {
-    console.error('Error fetching API key:', error);
-    return null;
-  }
+  return createKVStore(client, contextId, apiKeyStoreConfig).get(name);
 }
 
-/**
- * Saves an API key to Sitecore using GraphQL
- */
 export async function saveApiKey(
   client: ClientSDK,
-  sitecoreContextId: string,
+  contextId: string,
   name: string,
-  key: string
-): Promise<boolean> {
-  try {
-    // Ensure the storage path exists (throws if fails)
-    const parentId = await ensurePathExists(client, sitecoreContextId);
-
-    const itemPath = `${getStorageRoot()}/${name}`;
-    const checkResult = await client.mutate('xmc.authoring.graphql', {
-      params: {
-        body: {
-          query: queries.getItem,
-          variables: {
-            path: itemPath,
-            language: config.language,
-          },
-        },
-        query: {
-          sitecoreContextId,
-        },
-      },
-    });
-
-    let itemId: string | null = null;
-
-    if (checkResult?.data?.data) {
-      const data = checkResult.data?.data as { item: { itemId: string } };
-      if (data?.item?.itemId) {
-        itemId = data.item.itemId;
-      }
-    }
-
-    if (itemId) {
-      // Item exists, update it (no icon update)
-      await client.mutate('xmc.authoring.graphql', {
-        params: {
-          body: {
-            query: queries.updateItem,
-            variables: {
-              itemId,
-              language: config.language,
-              version: 1,
-              fields: [
-                {
-                  name: config.field,
-                  value: key,
-                },
-              ],
-            },
-          },
-          query: {
-            sitecoreContextId,
-          },
-        },
-      });
-    } else {
-      // Item doesn't exist, create it with apiKeyIcon
-      const fieldsToCreate: { name: string; value: string }[] = [
-        {
-          name: config.field,
-          value: key,
-        },
-      ];
-
-      if (config.apiKeyIcon) {
-        fieldsToCreate.push({
-          name: '__Icon',
-          value: config.apiKeyIcon,
-        });
-      }
-
-      await client.mutate('xmc.authoring.graphql', {
-        params: {
-          body: {
-            query: queries.createItem,
-            variables: {
-              name,
-              templateId: config.templateId,
-              parent: parentId,
-              language: config.language,
-              fields: fieldsToCreate,
-            },
-          },
-          query: {
-            sitecoreContextId,
-          },
-        },
-      });
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error saving API key:', error);
-    // Re-throw to propagate path creation errors
-    throw error;
-  }
+  value: string
+): Promise<void> {
+  return createKVStore(client, contextId, apiKeyStoreConfig).set(name, value);
 }
-
-/**
- * Configuration for API key storage
- */
-export function getApiKeyStorageConfig() {
-  return { ...config };
-}
-
-/**
- * Updates the storage configuration
- */
-export function setApiKeyStorageConfig(newConfig: Partial<typeof config>) {
-  Object.assign(config, newConfig);
-}
-
-/**
- * Type definitions
- */
-export type { PathSegment };
-
-export type ApiKeyStorageConfig = {
-  templateId: string;
-  basePath: string;
-  pathSegments: PathSegment[];
-  field: string;
-  language: string;
-  apiKeyIcon: string;
-};
