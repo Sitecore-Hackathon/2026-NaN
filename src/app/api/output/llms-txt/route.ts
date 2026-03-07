@@ -6,6 +6,7 @@ export async function POST(request: NextRequest) {
   const url = new URL(request.url);
   const contextId = url.searchParams.get('contextid');
   const accessToken = request.headers.get('authorization')?.split(' ')[1];
+  const aiApiKey = request.headers.get('x-vercel-api-key')!;
 
   if (!contextId) {
     return NextResponse.json({ error: 'Context ID is required' }, { status: 400 });
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
   });
 
   try {
-    const response = await generateLlmTxtStream(xmcClient, contextId, siteName, siteId, targetField, language);
+    const response = await generateLlmTxtStream(xmcClient, contextId, siteName, siteId, targetField, language, aiApiKey);
     return response;
   } catch (error: any) {
     console.error('Error generating llms.txt', error);
