@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -26,7 +27,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { RefreshCw, Settings, AlertCircle, CheckCircle2, Clock, Loader2 } from 'lucide-react';
+import { RefreshCw, Settings, AlertCircle, CheckCircle2, Clock, Loader2, FileText } from 'lucide-react';
 import { useAppSettings, useAppConfig } from '@/components/providers/app-settings-provider';
 import { usePreviewContextId } from '@/components/providers/marketplace';
 import { useAuth } from '@/components/providers/auth';
@@ -216,6 +217,40 @@ function StandaloneExtension() {
     batchCancelRef.current = true;
   };
 
+  const [isGeneratingLlm, setIsGeneratingLlm] = useState(false);
+
+  const generateLlmTxt = async () => {
+    if (!selectedSite || !sitecoreContextId) return;
+    setIsGeneratingLlm(true);
+    try {
+      const token = await getAccessTokenSilently();
+      const res = await fetch(`/api/output/llms-txt?contextid=${sitecoreContextId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          siteName: selectedSite.name,
+          siteId: selectedSite.id,
+          targetField: targetFieldName,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+      } else {
+        toast.error(data.error || data.message || 'Failed to generate llms.txt');
+      }
+    } catch (e) {
+      console.error('Failed to generate llms.txt', e);
+      toast.error('An error occurred while generating llms.txt');
+    } finally {
+      setIsGeneratingLlm(false);
+    }
+  };
+
   return (
     <TooltipProvider>
       <div className="max-w-5xl mx-auto p-8 space-y-5">
@@ -267,7 +302,18 @@ function StandaloneExtension() {
               </p>
             )}
             <Button
-              disabled={!selectedSite || loadingPages}
+              disabled={!selectedSite || loadingPages || isBatching || isGeneratingLlm}
+              variant="outline"
+              onClick={generateLlmTxt}
+            >
+              {isGeneratingLlm ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generating...</>
+              ) : (
+                <><FileText className="h-4 w-4 mr-2" />Generate LLM.TXT</>
+              )}
+            </Button>
+            <Button
+              disabled={!selectedSite || loadingPages || isGeneratingLlm}
               variant={isBatching ? 'destructive' : 'default'}
               onClick={isBatching ? cancelBatch : startBatch}
             >
