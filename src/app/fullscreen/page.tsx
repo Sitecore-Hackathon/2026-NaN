@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Tooltip,
   TooltipContent,
@@ -34,7 +35,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { RefreshCw, Settings, AlertCircle, CheckCircle2, Clock, Loader2, Ban, Wand2, FileText, Snowflake, Compass, TrendingUp, DoorClosed, Skull, Flame, Moon, Mountain, BookOpen, Sword, Coins } from 'lucide-react';
+import { RefreshCw, Settings, AlertCircle, CheckCircle2, Clock, Loader2, Ban, Wand2, FileText, Snowflake, Compass, TrendingUp, DoorClosed, Skull, Flame, Moon, Mountain, BookOpen, Sword, Coins, Edit } from 'lucide-react';
 import { useAppSettings, useAppConfig } from '@/components/providers/app-settings-provider';
 import { usePreviewContextId } from '@/components/providers/marketplace';
 import { useAuth } from '@/components/providers/auth';
@@ -49,11 +50,11 @@ function formatRelativeTime(dateStr: string | null): string {
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return '—';
   const diffMs = Date.now() - date.getTime();
-  const mins  = Math.floor(diffMs / 60_000);
+  const mins = Math.floor(diffMs / 60_000);
   const hours = Math.floor(diffMs / 3_600_000);
-  const days  = Math.floor(diffMs / 86_400_000);
-  if (mins  <  1) return 'just now';
-  if (mins  < 60) return `${mins}m ago`;
+  const days = Math.floor(diffMs / 86_400_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
   if (hours < 24) {
     const rem = mins - hours * 60;
     return rem > 0 ? `${hours}h ${rem}m ago` : `${hours}h ago`;
@@ -65,10 +66,10 @@ function formatRelativeTime(dateStr: string | null): string {
 
 function StatusBadge({ status }: { status: PageStatus }) {
   const cfg: Record<PageStatus, { colorScheme: VariantProps<typeof Badge>['colorScheme']; icon: React.ReactNode; label: string }> = {
-    pending:           { colorScheme: 'neutral', icon: <Clock className="h-3 w-3" />,        label: 'Pending'       },
-    processed:         { colorScheme: 'success', icon: <CheckCircle2 className="h-3 w-3" />, label: 'Processed'     },
-    error:             { colorScheme: 'danger',  icon: <AlertCircle className="h-3 w-3" />,  label: 'Error'         },
-    version_not_found: { colorScheme: 'neutral', icon: <Ban className="h-3 w-3" />,          label: 'No version'    },
+    pending: { colorScheme: 'neutral', icon: <Clock className="h-3 w-3" />, label: 'Pending' },
+    processed: { colorScheme: 'success', icon: <CheckCircle2 className="h-3 w-3" />, label: 'Processed' },
+    error: { colorScheme: 'danger', icon: <AlertCircle className="h-3 w-3" />, label: 'Error' },
+    version_not_found: { colorScheme: 'neutral', icon: <Ban className="h-3 w-3" />, label: 'No version' },
   };
   const { colorScheme, icon, label } = cfg[status] ?? { colorScheme: 'outline', icon: null, label: status };
   return (
@@ -206,7 +207,7 @@ function StandaloneExtension() {
     );
   }, [pages]);
 
-const processOnePage = async (pageId: string) => {
+  const processOnePage = async (pageId: string) => {
     if (!sitecoreContextId || !selectedSite) return;
     setProcessingIds((prev) => new Set(prev).add(pageId));
     try {
@@ -287,6 +288,68 @@ const processOnePage = async (pageId: string) => {
   const [llmStreamText, setLlmStreamText] = useState("");
   const [isLlmStreamOpen, setIsLlmStreamOpen] = useState(false);
   const [quoteIndex, setQuoteIndex] = useState(0);
+
+  // Markdown manual editing state
+  const [isEditingMarkdown, setIsEditingMarkdown] = useState(false);
+  const [editPageId, setEditPageId] = useState<string>('');
+  const [editMarkdownContent, setEditMarkdownContent] = useState('');
+  const [isFetchingMarkdown, setIsFetchingMarkdown] = useState(false);
+  const [isSavingMarkdown, setIsSavingMarkdown] = useState(false);
+
+  const openEditMarkdown = async (pageId: string) => {
+    if (!selectedSite || !sitecoreContextId) return;
+    setEditPageId(pageId);
+    setEditMarkdownContent('');
+    setIsEditingMarkdown(true);
+    setIsFetchingMarkdown(true);
+    try {
+      const token = await getAccessTokenSilently();
+      const res = await fetch(`/api/pages/${encodeURIComponent(pageId)}/markdown?contextid=${sitecoreContextId}&language=${selectedLanguage}&targetField=${targetFieldName}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEditMarkdownContent(data.markdown || '');
+      } else {
+        toast.error('Failed to fetch markdown content');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Error fetching markdown');
+    } finally {
+      setIsFetchingMarkdown(false);
+    }
+  };
+
+  const saveMarkdown = async () => {
+    if (!editPageId || !sitecoreContextId) return;
+    setIsSavingMarkdown(true);
+    try {
+      const token = await getAccessTokenSilently();
+      const res = await fetch(`/api/pages/${encodeURIComponent(editPageId)}/markdown`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          contextId: sitecoreContextId,
+          language: selectedLanguage,
+          targetField: targetFieldName,
+          markdown: editMarkdownContent
+        })
+      });
+      if (res.ok) {
+        toast.success('Successfully updated markdown');
+        setIsEditingMarkdown(false);
+        setPages(prev => prev.map(p => p.id === editPageId ? { ...p, status: 'processed' } : p));
+      } else {
+        toast.error('Failed to save markdown');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Error saving markdown');
+    } finally {
+      setIsSavingMarkdown(false);
+    }
+  };
 
   useEffect(() => {
     if (!isGeneratingLlm || llmStreamText.length > 0) return;
@@ -378,7 +441,43 @@ const processOnePage = async (pageId: string) => {
           </div>
         </DialogContent>
       </Dialog>
-      
+
+      {/* Markdown Editing Dialog */}
+      <Dialog open={isEditingMarkdown} onOpenChange={setIsEditingMarkdown}>
+        <DialogContent className="max-w-3xl h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>AI Markdown Editor</DialogTitle>
+            <DialogDescription>
+              Review or manually edit the target 'AI Markdown' field for this page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 flex flex-col mt-4">
+            {isFetchingMarkdown ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground animate-pulse space-y-4">
+                <Loader2 className="h-8 w-8 animate-spin" />
+                <p>Loading content...</p>
+              </div>
+            ) : (
+              <Textarea
+                className="flex-1 font-mono text-sm resize-none whitespace-pre-wrap p-4"
+                value={editMarkdownContent}
+                onChange={(e) => setEditMarkdownContent(e.target.value)}
+                placeholder="No markdown content. Write some or process the page first."
+              />
+            )}
+          </div>
+          <div className="flex justify-end gap-3 mt-4">
+            <Button variant="outline" onClick={() => setIsEditingMarkdown(false)} disabled={isSavingMarkdown}>
+              Cancel
+            </Button>
+            <Button onClick={saveMarkdown} disabled={isFetchingMarkdown || isSavingMarkdown}>
+              {isSavingMarkdown && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div className="max-w-5xl mx-auto p-8 space-y-5">
 
         {/* Header */}
@@ -510,87 +609,106 @@ const processOnePage = async (pageId: string) => {
         {/* Pages table */}
         {selectedSite && (
           <>
-          <h2 className="text-base font-semibold">Convert to markdown</h2>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/60 hover:bg-muted/60 border-b-2">
-                  <TableHead className="font-semibold text-foreground">Name</TableHead>
-                  <TableHead className="font-semibold text-foreground">Status</TableHead>
-                  <TableHead className="font-semibold text-foreground">Words</TableHead>
-                  <TableHead className="font-semibold text-foreground">Last Processed</TableHead>
-                  <TableHead className="w-10" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loadingPages ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin inline mr-2" />Loading pages…
-                    </TableCell>
+            <h2 className="text-base font-semibold">Convert to markdown</h2>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/60 hover:bg-muted/60 border-b-2">
+                    <TableHead className="font-semibold text-foreground">Name</TableHead>
+                    <TableHead className="font-semibold text-foreground">Status</TableHead>
+                    <TableHead className="font-semibold text-foreground">Words</TableHead>
+                    <TableHead className="font-semibold text-foreground">Last Processed</TableHead>
+                    <TableHead className="w-10" />
                   </TableRow>
-                ) : pages.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                      No pages found
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  pages.map((page) => {
-                    const depth = page.url === '/' ? 0 : page.url.split('/').filter(Boolean).length;
-                    const isParent = parentUrls.has(page.url);
-                    return (
-                    <TableRow key={page.id} className={`group${isParent ? ' bg-muted/30' : ''}`}>
-                      <TableCell>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span
-                              className={`block truncate max-w-xs${isParent ? ' font-semibold' : ' font-medium'}`}
-                              style={{ paddingLeft: depth * 20 }}
-                            >
-                              {page.displayName || page.name}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="right">
-                            <code className="text-xs font-mono">{page.url}</code>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={page.status} />
-                      </TableCell>
-                      <TableCell className="tabular-nums text-sm text-muted-foreground">
-                        {page.wordCount ?? '—'}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                        {formatRelativeTime(page.processedAt)}
-                      </TableCell>
-                      <TableCell>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                              disabled={processingIds.has(page.id)}
-                              onClick={() => processOnePage(page.id)}
-                            >
-                              {processingIds.has(page.id)
-                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                : <RefreshCw className="h-3.5 w-3.5" />}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {page.status === 'processed' ? 'Reprocess' : 'Process'} page
-                          </TooltipContent>
-                        </Tooltip>
+                </TableHeader>
+                <TableBody>
+                  {loadingPages ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin inline mr-2" />Loading pages…
                       </TableCell>
                     </TableRow>
-                  );})
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ) : pages.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        No pages found
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    pages.map((page) => {
+                      const depth = page.url === '/' ? 0 : page.url.split('/').filter(Boolean).length;
+                      const isParent = parentUrls.has(page.url);
+                      return (
+                        <TableRow key={page.id} className={`group${isParent ? ' bg-muted/30' : ''}`}>
+                          <TableCell>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span
+                                  className={`block truncate max-w-xs${isParent ? ' font-semibold' : ' font-medium'}`}
+                                  style={{ paddingLeft: depth * 20 }}
+                                >
+                                  {page.displayName || page.name}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="right">
+                                <code className="text-xs font-mono">{page.url}</code>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge status={page.status} />
+                          </TableCell>
+                          <TableCell className="tabular-nums text-sm text-muted-foreground">
+                            {page.wordCount ?? '—'}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                            {formatRelativeTime(page.processedAt)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => openEditMarkdown(page.id)}
+                                  >
+                                    <Edit className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Manually Edit AI Markdown
+                                </TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    disabled={processingIds.has(page.id)}
+                                    onClick={() => processOnePage(page.id)}
+                                  >
+                                    {processingIds.has(page.id)
+                                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      : <RefreshCw className="h-3.5 w-3.5" />}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {page.status === 'processed' ? 'Reprocess' : 'Process'} page
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </>
         )}
       </div>
