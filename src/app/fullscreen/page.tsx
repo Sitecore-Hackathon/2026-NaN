@@ -53,6 +53,7 @@ function formatRelativeTime(dateStr: string | null): string {
   return remH > 0 ? `${days}d ${remH}h ago` : `${days}d ago`;
 }
 
+
 function StatusBadge({ status }: { status: PageStatus }) {
   const cfg: Record<PageStatus, { colorScheme: VariantProps<typeof Badge>['colorScheme']; icon: React.ReactNode; label: string }> = {
     pending:           { colorScheme: 'neutral', icon: <Clock className="h-3 w-3" />,        label: 'Pending'       },
@@ -168,7 +169,20 @@ function StandaloneExtension() {
 
   const errorPages = useMemo(() => pages.filter((p) => p.status === 'error'), [pages]);
 
-  const processOnePage = async (pageId: string) => {
+  // Set of URLs that are a prefix of at least one other page URL (= branch nodes)
+  const parentUrls = useMemo(() => {
+    const urls = pages.map((p) => p.url);
+    return new Set(
+      pages
+        .filter((p) => {
+          const prefix = p.url === '/' ? '/' : p.url + '/';
+          return urls.some((u) => u !== p.url && u.startsWith(prefix));
+        })
+        .map((p) => p.url)
+    );
+  }, [pages]);
+
+const processOnePage = async (pageId: string) => {
     if (!sitecoreContextId || !selectedSite) return;
     setProcessingIds((prev) => new Set(prev).add(pageId));
     try {
@@ -366,36 +380,47 @@ function StandaloneExtension() {
           <div className="rounded-md border">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>URL</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Words</TableHead>
-                  <TableHead>Last Processed</TableHead>
+                <TableRow className="bg-muted/60 hover:bg-muted/60 border-b-2">
+                  <TableHead className="font-semibold text-foreground">Name</TableHead>
+                  <TableHead className="font-semibold text-foreground">Status</TableHead>
+                  <TableHead className="font-semibold text-foreground">Words</TableHead>
+                  <TableHead className="font-semibold text-foreground">Last Processed</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loadingPages ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin inline mr-2" />Loading pages…
                     </TableCell>
                   </TableRow>
                 ) : pages.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                       No pages found
                     </TableCell>
                   </TableRow>
                 ) : (
-                  pages.map((page) => (
-                    <TableRow key={page.id} className="group">
-                      <TableCell className="font-medium">{page.displayName || page.name}</TableCell>
-                      <TableCell className="max-w-60 overflow-hidden">
-                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono text-muted-foreground" title={page.url}>
-                          {page.url}
-                        </code>
+                  pages.map((page) => {
+                    const depth = page.url === '/' ? 0 : page.url.split('/').filter(Boolean).length;
+                    const isParent = parentUrls.has(page.url);
+                    return (
+                    <TableRow key={page.id} className={`group${isParent ? ' bg-muted/30' : ''}`}>
+                      <TableCell>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              className={`block truncate max-w-xs${isParent ? ' font-semibold' : ' font-medium'}`}
+                              style={{ paddingLeft: depth * 20 }}
+                            >
+                              {page.displayName || page.name}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">
+                            <code className="text-xs font-mono">{page.url}</code>
+                          </TooltipContent>
+                        </Tooltip>
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={page.status} />
@@ -427,7 +452,7 @@ function StandaloneExtension() {
                         </Tooltip>
                       </TableCell>
                     </TableRow>
-                  ))
+                  );})
                 )}
               </TableBody>
             </Table>
