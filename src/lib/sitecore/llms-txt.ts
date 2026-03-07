@@ -32,7 +32,8 @@ export async function generateLlmTxtStream(
   siteName: string,
   siteId: string,
   targetFieldName: string,
-  language: string
+  language: string,
+  aiApiKey: string
 ): Promise<Response> {
   try {
     // 1. Get all pages for the site
