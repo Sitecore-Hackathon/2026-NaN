@@ -14,15 +14,22 @@ export async function POST(
     return NextResponse.json({ error: 'Access token is required' }, { status: 401 });
   }
 
-  let body: { contextId?: string; language?: string; targetField?: string; metaField?: string };
+  let body: { contextId?: string; language?: string; targetField?: string; metaField?: string; saveToSitecore?: boolean };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { contextId, language = 'en', targetField = 'AiMarkdown', metaField = 'AiMarkdownMeta' } =
-    body;
+  const {
+    contextId,
+    language = 'en',
+    targetField = 'AiMarkdown',
+    metaField = 'AiMarkdownMeta',
+    // Default true: batch dashboard writes directly to Sitecore.
+    // Custom-field dialog passes false and saves via client.setValue() instead.
+    saveToSitecore = true,
+  } = body;
 
   if (!contextId) {
     return NextResponse.json({ error: 'contextId is required' }, { status: 400 });
@@ -40,7 +47,8 @@ export async function POST(
       language,
       targetField,
       metaField,
-      aiApiKey
+      aiApiKey,
+      saveToSitecore
     );
     return NextResponse.json(result);
   } catch (error) {

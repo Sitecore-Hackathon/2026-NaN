@@ -22,6 +22,52 @@ const GQL_UPDATE_ITEM = `
   }
 `;
 
+// ---------------------------------------------------------------------------
+// HTML cleaning: strips Sitecore experience-editor artifacts that appear
+// in the HTML returned by the AI Agent API (/api/v1/pages/{pageId}/html).
+// These include:
+//   - JSON metadata blobs embedded as text inside <code> or bare elements
+//     (e.g. {"datasource":{"id":"..."},"fieldType":"..."})
+//   - "[No text in field]" placeholder texts
+//   - Sitecore chrome wrapper elements (data-sc-* attributes)
+//   - Standard noise: <nav>, <footer>, <header>, <script>, <style>
+// ---------------------------------------------------------------------------
+
+function cleanSitecoreHtml(html: string): string {
+  // 1. Remove standard noise tags entirely
+  let cleaned = html.replace(
+    /<(nav|footer|header|script|style|noscript)[^>]*>[\s\S]*?<\/\1>/gi,
+    ''
+  );
+
+  // 2. Strip <code> elements whose content is a Sitecore metadata JSON blob.
+  //    Turndown converts <code> to backtick-wrapped text, so these appear as
+  //    `{"datasource":{"id":"..."},...}` in the generated Markdown.
+  cleaned = cleaned.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, (match, inner) => {
+    // Remove the whole <code> element when it contains a Sitecore datasource blob
+    if (inner.includes('"datasource"') || inner.includes('"fieldId"')) return '';
+    return match;
+  });
+
+  // 3. Strip Sitecore metadata JSON that appears as bare text (not inside a tag).
+  //    Pattern: {"datasource":{"id":"{...}","language":"en",...},"fieldType":"..."}
+  cleaned = cleaned.replace(/\{[^{}]*"datasource"\s*:\s*\{[^{}]*\}[^{}]*\}/g, '');
+
+  // 4. Remove "[No text in field]" placeholders and "Missing Datasource Item" messages
+  //    that Sitecore injects for empty fields and broken datasources.
+  cleaned = cleaned.replace(/\[No text in field\]/gi, '');
+  cleaned = cleaned.replace(/Missing Datasource Item/gi, '');
+
+  // 5. Unwrap data-sc-* attribute wrapper elements (keep inner content).
+  //    Sitecore wraps field values in <span data-sc-field-id="..."> etc.
+  cleaned = cleaned.replace(/<(span|div)\s[^>]*data-sc-[^>]*>([\s\S]*?)<\/\1>/gi, '$2');
+
+  // 6. Collapse multiple blank lines left behind by removals
+  cleaned = cleaned.replace(/(\n\s*){3,}/g, '\n\n');
+
+  return cleaned;
+}
+
 export async function processPage(
   client: experimental_XMC,
   contextId: string,
@@ -29,27 +75,57 @@ export async function processPage(
   language: string,
   targetFieldName: string,
   metaFieldName: string,
-  aiApiKey?: string
+  aiApiKey?: string,
+  // When false, markdown is generated but NOT written to Sitecore.
+  // Use this from the custom-field dialog to avoid an "item already modified"
+  // concurrency conflict when the host saves via client.setValue() afterward.
+  saveToSitecore = true
 ): Promise<ProcessPageResult> {
-  // 1. Fetch HTML
+  // 1. Fetch rendered page HTML via the AI Agent API endpoint.
+  //    This endpoint renders the page as-is and returns clean HTML
+  //    (not the authoring/edit-mode representation).
   const htmlResult = await client.agent.pagesGetPageHtml({
     path: { pageId: itemId },
     query: { language, sitecoreContextId: contextId },
   });
   const rawHtml = htmlResult.data?.html ?? '';
 
-  // Strip noise tags before converting
-  const cleanedHtml = rawHtml.replace(
-    /<(nav|footer|script|style|header)[^>]*>[\s\S]*?<\/\1>/gi,
-    ''
-  );
+  // 2. Strip Sitecore experience-editor artifacts from the HTML
+  const cleanedHtml = cleanSitecoreHtml(rawHtml);
 
-  // 2. HTML → Markdown
+  // 3. HTML → Markdown
   const td = new TurndownService({ headingStyle: 'atx' });
+
+  // Ignore inline elements that carry no meaningful content
+  td.addRule('removeEmptyInline', {
+    filter: ['span', 'code'],
+    replacement: (content) => content.trim(),
+  });
+
   const rawMarkdown = td.turndown(cleanedHtml);
 
-  // 3. AI stages (optional)
-  let finalMarkdown = rawMarkdown;
+  // 4. Remove any remaining JSON-like lines that Turndown might have kept
+  //    (lines starting with { and containing "datasource" or "fieldId")
+  const filteredMarkdown = rawMarkdown
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      // Drop lines that look like Sitecore JSON metadata
+      if (trimmed.startsWith('{') && (trimmed.includes('"datasource"') || trimmed.includes('"fieldId"'))) {
+        return false;
+      }
+      // Drop "[No text in field]" and "Missing Datasource Item" if still present
+      if (/\[No text in field\]/i.test(trimmed)) return false;
+      if (/Missing Datasource Item/i.test(trimmed)) return false;
+      return true;
+    })
+    .join('\n')
+    // Collapse multiple blank lines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  // 5. AI stages (optional — only if an AI API key is provided)
+  let finalMarkdown = filteredMarkdown;
   let description: string | null = null;
   let faqCount: number | null = null;
   let entities: string[] | null = null;
@@ -63,7 +139,7 @@ export async function processPage(
       output: Output.object({ schema: z.object({ markdown: z.string() }) }),
       system:
         'Fix heading hierarchy, remove nav/footer noise, normalise lists. Output only the cleaned markdown.',
-      prompt: rawMarkdown,
+      prompt: filteredMarkdown,
     });
 
     // Stage B — AEO enrichment
@@ -89,26 +165,30 @@ Return the full enriched markdown plus metadata.`,
     entities = stageB.entities;
   }
 
-  // 4. Store to XMC
+  // 6. Optionally store to XMC via Authoring GraphQL.
+  //    Skipped when saveToSitecore=false (e.g. custom-field dialog — the host
+  //    writes via client.setValue() to avoid a concurrency conflict).
   const processedAt = new Date().toISOString();
   const wordCount = finalMarkdown.split(/\s+/).filter(Boolean).length;
-  const meta = JSON.stringify({ processedAt, wordCount, description, faqCount, entities });
 
-  await client.authoring.graphql({
-    body: {
-      query: GQL_UPDATE_ITEM,
-      variables: {
-        itemId,
-        language,
-        fields: [
-          { name: targetFieldName, value: finalMarkdown },
-          { name: metaFieldName, value: meta },
-        ],
+  if (saveToSitecore) {
+    const meta = JSON.stringify({ processedAt, wordCount, description, faqCount, entities });
+    await client.authoring.graphql({
+      body: {
+        query: GQL_UPDATE_ITEM,
+        variables: {
+          itemId,
+          language,
+          fields: [
+            { name: targetFieldName, value: finalMarkdown },
+            { name: metaFieldName, value: meta },
+          ],
+        },
       },
-    },
-    query: { sitecoreContextId: contextId },
-  });
+      query: { sitecoreContextId: contextId },
+    });
+  }
 
-  // 5. Return result
+  // 7. Return result
   return { itemId, markdown: finalMarkdown, wordCount, processedAt, description, faqCount, entities };
 }

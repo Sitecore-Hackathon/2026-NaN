@@ -82,6 +82,9 @@ function AiMarkdownFieldEditor() {
           language,
           targetField: targetFieldName,
           metaField: metaFieldName,
+          // Do not save to Sitecore here — the Save button calls client.setValue()
+          // as the single write to avoid an "item already modified" conflict.
+          saveToSitecore: false,
         }),
       });
 
