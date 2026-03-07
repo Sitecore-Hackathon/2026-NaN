@@ -268,9 +268,10 @@ export function SetupWizardDialog({ siteId, siteName, contextId, onComplete }: S
   // Run checks on mount
   useEffect(() => {
     async function runChecks() {
+      console.log('[SETUP] run checks');
       const [pageCheck, settingsCheck] = await Promise.allSettled([
         checkPageTemplateFields(client, contextId, siteId, pageFields.map((f) => f.name)),
-        checkSiteSettingsField(client, contextId, siteName, llmFieldName),
+        checkSiteSettingsField(client, contextId, siteId, llmFieldName),
       ]);
 
       if (pageCheck.status === 'fulfilled') {

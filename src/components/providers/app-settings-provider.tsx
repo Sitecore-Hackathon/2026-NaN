@@ -174,6 +174,7 @@ export function AppSettingsModal({ isOpen, onOpenChange }: AppSettingsModalProps
               <Label htmlFor='cfg-target'>Target field name</Label>
               <Input
                 id='cfg-target'
+                className='focus:ring-primary'
                 placeholder='AiMarkdown'
                 value={temp.targetFieldName}
                 onChange={(e) => set('targetFieldName', e.target.value)}

@@ -236,7 +236,7 @@ export async function addFieldsToTemplate(
 export async function checkSiteSettingsField(
   client: ClientSDK,
   contextId: string,
-  siteName: string,
+  siteId: string,
   fieldName: string
 ): Promise<{
   settingsItemId: string | null;
@@ -244,21 +244,26 @@ export async function checkSiteSettingsField(
   hasField: boolean;
   checked: boolean;
 }> {
-  const candidates = [
-    `/sitecore/content/${siteName}/Settings`,
-    `/sitecore/content/${siteName}/Home/Settings`,
-    `/sitecore/content/${siteName}/sitecore/Settings`,
-  ];
+  const siteResult = await client.query('xmc.sites.retrieveSite', {
+    params: {
+      path: { siteId },
+      query: { sitecoreContextId: contextId },
+    }
+  });
+  console.log('[SETUP] siteResult', siteResult);
 
-  for (const path of candidates) {
+  const siteDefinitionId = siteResult.data?.data?.hosts?.[0]?.properties?.siteDefinitionID;
+  console.log('[SETUP] siteDefinitionId', siteDefinitionId);
+  for (const id of [siteDefinitionId]) {
     try {
       const { data } = await gql<{
         item: {
           itemId: string;
           template: { templateId: string; name: string };
         } | null;
-      }>(client, contextId, GQL_GET_ITEM_BY_PATH, { path, language: 'en' });
+      }>(client, contextId, GQL_GET_ITEM_TEMPLATE_BY_ID, { itemId: id, language: 'en' });
 
+      console.log('[SETUP] item template data', data);
       if (!data?.item) continue;
 
       const { itemId: settingsItemId, template } = data.item;
