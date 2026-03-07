@@ -187,11 +187,34 @@ function StandaloneExtension() {
     }
   };
 
-  // Batching state — TODO: wire to /api/jobs in next phase
-  const isBatching = false;
-  const batchDone = 0;
-  const batchTotal = 0;
+  const [isBatching, setIsBatching] = useState(false);
+  const [batchDone, setBatchDone] = useState(0);
+  const [batchTotal, setBatchTotal] = useState(0);
+  const batchCancelRef = useRef(false);
   const progressPct = batchTotal > 0 ? Math.round((batchDone / batchTotal) * 100) : 0;
+
+  const startBatch = async () => {
+    if (!selectedSite || !sitecoreContextId) return;
+    const pending = pages.filter((p) => p.status !== 'processed');
+    if (pending.length === 0) return;
+
+    batchCancelRef.current = false;
+    setIsBatching(true);
+    setBatchDone(0);
+    setBatchTotal(pending.length);
+
+    for (const page of pending) {
+      if (batchCancelRef.current) break;
+      await processOnePage(page.id);
+      setBatchDone((n) => n + 1);
+    }
+
+    setIsBatching(false);
+  };
+
+  const cancelBatch = () => {
+    batchCancelRef.current = true;
+  };
 
   return (
     <TooltipProvider>
@@ -246,9 +269,7 @@ function StandaloneExtension() {
             <Button
               disabled={!selectedSite || loadingPages}
               variant={isBatching ? 'destructive' : 'default'}
-              onClick={() => {
-                // TODO: wire to /api/jobs/start in next phase
-              }}
+              onClick={isBatching ? cancelBatch : startBatch}
             >
               {isBatching ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Cancel</>
