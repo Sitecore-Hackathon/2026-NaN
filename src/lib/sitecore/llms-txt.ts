@@ -98,9 +98,13 @@ export async function generateLlmTxtStream(
         }
       } catch (e) {}
       
-      if (!mdUrl.startsWith('/')) mdUrl = '/' + mdUrl;
-      if (mdUrl.endsWith('/') && mdUrl.length > 1) mdUrl = mdUrl.slice(0, -1);
-      if (!mdUrl.endsWith('.md')) mdUrl += '.md';
+      if (mdUrl === '/') {
+        mdUrl = '/home.md';
+      } else {
+        if (!mdUrl.startsWith('/')) mdUrl = '/' + mdUrl;
+        if (mdUrl.endsWith('/') && mdUrl.length > 1) mdUrl = mdUrl.slice(0, -1);
+        if (!mdUrl.endsWith('.md')) mdUrl += '.md';
+      }
       
       // Override so the fallback generator uses it too
       page.url = mdUrl;

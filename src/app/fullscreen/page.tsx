@@ -351,6 +351,64 @@ function StandaloneExtension() {
     }
   };
 
+  // Master LLM manual editing state
+  const [isEditingOverallLlm, setIsEditingOverallLlm] = useState(false);
+  const [overallLlmContent, setOverallLlmContent] = useState('');
+  const [isFetchingOverallLlm, setIsFetchingOverallLlm] = useState(false);
+  const [isSavingOverallLlm, setIsSavingOverallLlm] = useState(false);
+
+  const openOverallLlmEditor = async () => {
+    if (!selectedSite || !sitecoreContextId) return;
+    setOverallLlmContent('');
+    setIsEditingOverallLlm(true);
+    setIsFetchingOverallLlm(true);
+    try {
+      const token = await getAccessTokenSilently();
+      const res = await fetch(`/api/sites/${encodeURIComponent(selectedSite.id)}/llms-txt?contextid=${sitecoreContextId}&language=${selectedLanguage}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOverallLlmContent(data.markdown || '');
+      } else {
+        toast.error('Failed to fetch LLM.TXT content');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Error fetching LLM.TXT');
+    } finally {
+      setIsFetchingOverallLlm(false);
+    }
+  };
+
+  const saveOverallLlm = async () => {
+    if (!selectedSite || !sitecoreContextId) return;
+    setIsSavingOverallLlm(true);
+    try {
+      const token = await getAccessTokenSilently();
+      const res = await fetch(`/api/sites/${encodeURIComponent(selectedSite.id)}/llms-txt`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          contextId: sitecoreContextId,
+          language: selectedLanguage,
+          markdown: overallLlmContent
+        })
+      });
+      if (res.ok) {
+        toast.success('Successfully updated LLM.TXT content');
+        setIsEditingOverallLlm(false);
+      } else {
+        toast.error('Failed to save LLM.TXT content');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Error saving LLM.TXT');
+    } finally {
+      setIsSavingOverallLlm(false);
+    }
+  };
+
   useEffect(() => {
     if (!isGeneratingLlm || llmStreamText.length > 0) return;
     const interval = setInterval(() => {
@@ -478,6 +536,42 @@ function StandaloneExtension() {
         </DialogContent>
       </Dialog>
 
+      {/* Master LLM Editing Dialog */}
+      <Dialog open={isEditingOverallLlm} onOpenChange={setIsEditingOverallLlm}>
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Master LLM.TXT Editor</DialogTitle>
+            <DialogDescription>
+              Review or manually edit the final generated <code className="font-mono text-xs">llms.txt</code> content that gets published to the root of the site.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 flex flex-col mt-4">
+            {isFetchingOverallLlm ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground animate-pulse space-y-4">
+                <Loader2 className="h-8 w-8 animate-spin" />
+                <p>Fetching content...</p>
+              </div>
+            ) : (
+              <Textarea 
+                className="flex-1 font-mono text-sm resize-none whitespace-pre-wrap p-4"
+                value={overallLlmContent}
+                onChange={(e) => setOverallLlmContent(e.target.value)}
+                placeholder="No generated LLM.TXT content found. Try generating it first."
+              />
+            )}
+          </div>
+          <div className="flex justify-end gap-3 mt-4">
+            <Button variant="outline" onClick={() => setIsEditingOverallLlm(false)} disabled={isSavingOverallLlm}>
+              Cancel
+            </Button>
+            <Button onClick={saveOverallLlm} disabled={isFetchingOverallLlm || isSavingOverallLlm}>
+              {isSavingOverallLlm && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      
       <div className="max-w-5xl mx-auto p-8 space-y-5">
 
         {/* Header */}
@@ -554,6 +648,14 @@ function StandaloneExtension() {
                 /{batchTotal} processed
               </p>
             )}
+            <Button
+              disabled={!selectedSite || loadingPages || isBatching || isGeneratingLlm}
+              variant="outline"
+              onClick={openOverallLlmEditor}
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              Review / Edit LLM.TXT
+            </Button>
             <Button
               disabled={!selectedSite || loadingPages || isBatching || isGeneratingLlm}
               variant="outline"
