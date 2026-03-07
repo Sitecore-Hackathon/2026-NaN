@@ -236,6 +236,19 @@ export function createKVStore(
 // Pre-configured stores
 // ---------------------------------------------------------------------------
 
+/** Store config for setup flag under /sitecore/system/Modules/AEO Helper/Setup */
+export const setupFlagStoreConfig: KVStoreConfig = {
+  templateId: '{97D75760-CF8B-4740-810B-7727B564EF4D}',
+  folderTemplateId: '{A87A00B1-E6DB-45AB-8B54-636FEC3B5523}',
+  basePath: '/sitecore/system/Modules',
+  pathSegments: [
+    { name: 'AEO Helper', icon: 'Office/32x32/window_gear.png' },
+    { name: 'Setup', icon: 'Office/32x32/window_gear.png' },
+  ],
+  valueField: 'Value',
+  language: 'en',
+};
+
 /** Store config for API keys under /sitecore/system/Modules/AEO Helper/Api Keys */
 export const apiKeyStoreConfig: KVStoreConfig = {
   templateId: '{97D75760-CF8B-4740-810B-7727B564EF4D}',

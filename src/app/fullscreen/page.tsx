@@ -34,10 +34,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { RefreshCw, Settings, AlertCircle, CheckCircle2, Clock, Loader2, Ban, FileText } from 'lucide-react';
+import { RefreshCw, Settings, AlertCircle, CheckCircle2, Clock, Loader2, Ban, Wand2, FileText } from 'lucide-react';
 import { useAppSettings, useAppConfig } from '@/components/providers/app-settings-provider';
 import { usePreviewContextId } from '@/components/providers/marketplace';
 import { useAuth } from '@/components/providers/auth';
+import { SetupWizardDialog } from '@/components/custom/setup-wizard';
 import type { SiteSummary } from '@/lib/sitecore/sites';
 import type { PageSummary, PageStatus } from '@/lib/sitecore/pages';
 import type { ProcessPageResult } from '@/lib/sitecore/process-page';
@@ -83,7 +84,7 @@ function StatusBadge({ status }: { status: PageStatus }) {
 // ── Main extension ────────────────────────────────────────────────────────────
 
 function StandaloneExtension() {
-  const { setModalOpen } = useAppSettings();
+  const { setModalOpen, needsSetup, setNeedsSetup, markSetupComplete } = useAppSettings();
   const { targetFieldName, metaFieldName } = useAppConfig();
   const sitecoreContextId = usePreviewContextId();
   const { getAccessTokenSilently } = useAuth();
@@ -360,9 +361,14 @@ const processOnePage = async (pageId: string) => {
               </p>
             )}
           </div>
-          <Button variant="outline" size="icon" aria-label="Settings" onClick={() => setModalOpen(true)}>
-            <Settings className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={() => setNeedsSetup(true)} title="Re-run setup">
+              <Wand2 className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="icon" aria-label="Settings" onClick={() => setModalOpen(true)}>
+              <Settings className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Controls */}
@@ -549,6 +555,15 @@ const processOnePage = async (pageId: string) => {
           </>
         )}
       </div>
+
+      {needsSetup && selectedSite && sitecoreContextId && (
+        <SetupWizardDialog
+          siteId={selectedSite.id}
+          siteName={selectedSite.name}
+          contextId={sitecoreContextId}
+          onComplete={markSetupComplete}
+        />
+      )}
     </TooltipProvider>
   );
 }

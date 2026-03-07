@@ -14,6 +14,8 @@ import {
 import {
   appConfigJsonStoreConfig,
   createJsonStore,
+  createKVStore,
+  setupFlagStoreConfig,
 } from '@/lib/sitecore/storage/api-key-storage';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,17 +38,23 @@ export interface AppConfig {
   targetFieldName: string;
   /** Field name to write JSON metadata to (e.g. "AiMarkdownMeta") */
   metaFieldName: string;
+  /** Field name on the site settings template for llm.txt content (e.g. "AiLlmTxt") */
+  llmFieldName: string;
 }
 
 const defaultConfig: AppConfig = {
   targetFieldName: 'AiMarkdown',
   metaFieldName: 'AiMarkdownMeta',
+  llmFieldName: 'LLM',
 };
 
 interface AppSettingsContextType {
   config: AppConfig;
   setModalOpen: (open: boolean) => void;
   saveSettings: (newConfig: AppConfig) => Promise<void>;
+  needsSetup: boolean;
+  setNeedsSetup: (value: boolean) => void;
+  markSetupComplete: () => Promise<void>;
 }
 
 const AppSettingsContext = createContext<AppSettingsContextType | undefined>(
@@ -66,6 +74,7 @@ export function AppSettingsProvider({ children }: AppSettingsProviderProps) {
   const appContext = useAppContext();
   const [config, setConfig] = useState<AppConfig>(defaultConfig);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
 
   const sitecoreContextId = appContext?.resourceAccess?.[0]?.context?.preview;
 
@@ -75,6 +84,13 @@ export function AppSettingsProvider({ children }: AppSettingsProviderProps) {
     const store = createJsonStore<AppConfig>(client, sitecoreContextId, appConfigJsonStoreConfig);
     store.get().then((saved) => {
       if (saved) setConfig({ ...defaultConfig, ...saved });
+    });
+
+    const setupStore = createKVStore(client, sitecoreContextId, setupFlagStoreConfig);
+    setupStore.get('setup_complete').then((flag) => {
+      if (flag !== 'true') setNeedsSetup(true);
+    }).catch(() => {
+      // don't block dashboard if flag read fails
     });
   }, [sitecoreContextId, client]);
 
@@ -91,9 +107,20 @@ export function AppSettingsProvider({ children }: AppSettingsProviderProps) {
     [client, sitecoreContextId]
   );
 
+  const markSetupComplete = useCallback(async () => {
+    if (!sitecoreContextId) return;
+    try {
+      const store = createKVStore(client, sitecoreContextId, setupFlagStoreConfig);
+      await store.set('setup_complete', 'true');
+    } catch {
+      // best-effort
+    }
+    setNeedsSetup(false);
+  }, [client, sitecoreContextId]);
+
   return (
     <AppSettingsContext.Provider
-      value={{ config, setModalOpen: setIsModalOpen, saveSettings }}
+      value={{ config, setModalOpen: setIsModalOpen, saveSettings, needsSetup, setNeedsSetup, markSetupComplete }}
     >
       {children}
       <AppSettingsModal isOpen={isModalOpen} onOpenChange={setIsModalOpen} />
@@ -162,6 +189,15 @@ export function AppSettingsModal({ isOpen, onOpenChange }: AppSettingsModalProps
               />
             </div>
           </div>
+          <div className='space-y-2'>
+            <Label htmlFor='cfg-llm'>LLM.txt field name</Label>
+            <Input
+              id='cfg-llm'
+              placeholder='AiLlmTxt'
+              value={temp.llmFieldName}
+              onChange={(e) => set('llmFieldName', e.target.value)}
+            />
+          </div>
         </div>
 
         <DialogFooter>
@@ -191,6 +227,6 @@ export function useAppConfig(): AppConfig {
 }
 
 export function useAppSettings() {
-  const { setModalOpen, config, saveSettings } = useAppSettingsInternal();
-  return { setModalOpen, config, saveSettings };
+  const { setModalOpen, config, saveSettings, needsSetup, setNeedsSetup, markSetupComplete } = useAppSettingsInternal();
+  return { setModalOpen, config, saveSettings, needsSetup, setNeedsSetup, markSetupComplete };
 }
