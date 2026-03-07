@@ -819,7 +819,6 @@ function StandaloneExtension() {
       {wizardReady && selectedSite && sitecoreContextId && (
         <SetupWizardDialog
           siteId={selectedSite.id}
-          siteName={selectedSite.name}
           contextId={sitecoreContextId}
           onComplete={markSetupComplete}
         />
