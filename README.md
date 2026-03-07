@@ -5,7 +5,7 @@
 NaN
 
 ## Category
-Best Marketplace App
+Best Marketplace App for Sitecore AI
 
 ## Description
 
@@ -34,7 +34,6 @@ LLMify addresses these challenges through three integrated extension points:
 
 - **Native Conversion Algorithms**: Aumotically convert HTML to clean Markdown (AI is NOT required)
 - **Batch Processing**: Process hundreds of pages with progress tracking and cancellation support
-- **Real-Time Status Tracking**: Visual indicators showing processed, pending, error, and no-version states
 - **Language Support**: Process content in multiple languages with per-language configuration
 - **Configuration Persistence**: Store API keys and field mappings as Sitecore content items
 - **Streaming Output**: Watch AI generation in real-time with live streaming updates
