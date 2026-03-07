@@ -190,7 +190,7 @@ Refer to ./src/lib/sitecore/storage/*.ts
 - Scaffold Next.js app (full-stack + Auth0 + XMC + AI modules + Blok theme)
 - Configure `.env.local`, CSP headers, Auth0 flow
 - Stub extension point routes (fullscreen, custom-field, pages-context-panel)
-- `GET/POST /api/config` — read/write XMC config item (first-run wizard creates it)
+<!-- - `GET/POST /api/config` — read/write XMC config item (first-run wizard creates it) -->
 
 ### Phase 2 — Single-Page Pipeline
 - `POST /api/pages/[itemId]/process`: fetch HTML → turndown → Stage A → Stage B AEO
