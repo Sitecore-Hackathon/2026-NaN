@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { experimental_createXMCClient } from '@sitecore-marketplace-sdk/xmc';
-import { generateAndStoreLlmTxt } from '@/lib/sitecore/llms-txt';
+import { generateLlmTxtStream } from '@/lib/sitecore/llms-txt';
 
 export async function POST(request: NextRequest) {
   const url = new URL(request.url);
@@ -15,6 +15,10 @@ export async function POST(request: NextRequest) {
   }
 
   const { siteName, siteId, targetField, language } = await request.json();
+  console.log('siteName', siteName);
+  console.log('siteId', siteId);
+  console.log('targetField', targetField);
+  console.log('language', language);
 
   if (!siteName || !siteId || !targetField || !language) {
     return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
@@ -25,13 +29,8 @@ export async function POST(request: NextRequest) {
   });
 
   try {
-    const result = await generateAndStoreLlmTxt(xmcClient, contextId, siteName, siteId, targetField, language);
-    console.log('result', JSON.stringify(result));
-    if (result.success) {
-      return NextResponse.json(result);
-    } else {
-      return NextResponse.json(result, { status: 500 });
-    }
+    const response = await generateLlmTxtStream(xmcClient, contextId, siteName, siteId, targetField, language);
+    return response;
   } catch (error: any) {
     console.error('Error generating llms.txt', error);
     return NextResponse.json({ error: error.message || 'Failed to generate llms.txt' }, { status: 500 });

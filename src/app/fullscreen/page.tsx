@@ -26,6 +26,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { RefreshCw, Settings, AlertCircle, CheckCircle2, Clock, Loader2, Ban, FileText } from 'lucide-react';
 import { useAppSettings, useAppConfig } from '@/components/providers/app-settings-provider';
@@ -261,10 +268,14 @@ const processOnePage = async (pageId: string) => {
   };
 
   const [isGeneratingLlm, setIsGeneratingLlm] = useState(false);
+  const [llmStreamText, setLlmStreamText] = useState("");
+  const [isLlmStreamOpen, setIsLlmStreamOpen] = useState(false);
 
   const generateLlmTxt = async () => {
     if (!selectedSite || !sitecoreContextId) return;
     setIsGeneratingLlm(true);
+    setLlmStreamText("");
+    setIsLlmStreamOpen(true);
     try {
       const token = await getAccessTokenSilently();
       const res = await fetch(`/api/output/llms-txt?contextid=${sitecoreContextId}`, {
@@ -281,12 +292,27 @@ const processOnePage = async (pageId: string) => {
         }),
       });
 
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.message);
-      } else {
+      if (!res.ok) {
+        const data = await res.json();
         toast.error(data.error || data.message || 'Failed to generate llms.txt');
+        setIsGeneratingLlm(false);
+        return;
       }
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      if (reader) {
+        let isDone = false;
+        while (!isDone) {
+          const { done, value } = await reader.read();
+          isDone = done;
+          if (value) {
+            const chunk = decoder.decode(value, { stream: true });
+            setLlmStreamText(prev => prev + chunk);
+          }
+        }
+      }
+      toast.success("Generated llms.txt and saved to Site Grouping item.");
     } catch (e) {
       console.error('Failed to generate llms.txt', e);
       toast.error('An error occurred while generating llms.txt');
@@ -297,6 +323,22 @@ const processOnePage = async (pageId: string) => {
 
   return (
     <TooltipProvider>
+      {/* Stream Dialog */}
+      <Dialog open={isLlmStreamOpen} onOpenChange={setIsLlmStreamOpen}>
+        <DialogContent className="max-w-3xl h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Generating LLM.TXT...</DialogTitle>
+            <DialogDescription>
+              We are using Vercel AI SDK to analyze and format your content. The result is automatically being saved to Sitecore once complete.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 bg-muted/30 p-4 rounded-md border font-mono text-sm whitespace-pre-wrap overflow-auto">
+            {llmStreamText}
+            {isGeneratingLlm && <span className="animate-pulse">_</span>}
+          </div>
+        </DialogContent>
+      </Dialog>
+      
       <div className="max-w-5xl mx-auto p-8 space-y-5">
 
         {/* Header */}

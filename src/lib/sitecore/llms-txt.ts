@@ -1,5 +1,7 @@
 import { experimental_XMC } from '@sitecore-marketplace-sdk/xmc';
 import { listAllPages } from '@/lib/sitecore/pages';
+import { generateText, streamText } from 'ai';
+import { createGateway } from '@ai-sdk/gateway';
 
 const GQL_ADD_VERSION = `
   mutation AddLanguageVersion($itemId: ID!, $language: String!) {
@@ -24,14 +26,14 @@ const GQL_UPDATE_LLM_FIELD = `
   }
 `;
 
-export async function generateAndStoreLlmTxt(
+export async function generateLlmTxtStream(
   client: experimental_XMC,
   contextId: string,
   siteName: string,
   siteId: string,
   targetFieldName: string,
   language: string
-): Promise<{ success: boolean; message: string }> {
+): Promise<Response> {
   try {
     // 1. Get all pages for the site
     const siteResult = await client.sites.retrieveSite({
@@ -45,7 +47,7 @@ export async function generateAndStoreLlmTxt(
     const pages = await listAllPages(client, contextId, siteId, siteName, targetFieldName, metaFieldName);
 
     if (!pages || pages.length === 0) {
-      return { success: false, message: 'No pages found for the site.' };
+      return new Response(JSON.stringify({ error: 'No pages found for the site.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
     // 3. Filter for processed pages and fetch their markdown content
@@ -53,11 +55,9 @@ export async function generateAndStoreLlmTxt(
     const processedPages = pages.filter(p => p.status === 'processed');
 
     if (processedPages.length === 0) {
-      return { success: false, message: 'No processed Markdown content found to aggregate.' };
+      return new Response(JSON.stringify({ error: 'No processed Markdown content found to aggregate.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
-    // We still need to fetch the actual markdown content since listAllPages only checks if it exists
-    // (targetValue in listAllPages is used for status, but not returned in PageSummary)
     for (const page of processedPages) {
       const itemResult = await client.authoring.graphql({
         body: {
@@ -85,75 +85,108 @@ export async function generateAndStoreLlmTxt(
     }
 
     if (processedPagesResult.length === 0) {
-      return { success: false, message: 'Failed to retrieve Markdown content for processed pages.' };
+      return new Response(JSON.stringify({ error: 'Failed to retrieve Markdown content for processed pages.' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     }
 
-    // 3. Generate llms.txt content
-    let llmContent = `# ${siteName}\n\n`;
-    llmContent += `> Aggregated AI-ready content for ${siteName}\n\n`;
-
-    llmContent += `## Sections\n`;
+    // 3. Draft a raw aggregate
+    let rawAggregate = `Site Name: ${siteName}\n\n`;
     for (const page of processedPagesResult) {
-      llmContent += `- [${page.title}](${page.url})\n`;
+      rawAggregate += `TITLE: ${page.title}\nURL: ${page.url}\nCONTENT:\n${page.markdown}\n\n`;
     }
 
-    llmContent += `\n## Full Content\n\n`;
-    for (const page of processedPagesResult) {
-      llmContent += `### ${page.title}\n`;
-      llmContent += `URL: ${page.url}\n\n`;
-      llmContent += `${page.markdown}\n\n---\n\n`;
-    }
+    const aiKey = process.env.VERCEL_AI_KEY;
+    
+    // Save function to run when text finishes generating or instantly if fallback
+    const saveToSitecore = async (textToSave: string) => {
+      try {
+        const siteGroupingId = siteResult.data?.hosts?.[0]?.properties?.siteDefinitionID;
+        if (!siteGroupingId) {
+          console.error('Could not find Site Grouping ID (siteDefinitionID) in site properties.');
+          return;
+        }
 
-    // 4. Update the LLM field on the Site Grouping item
-    // The Site Grouping item ID is available in the site properties as siteDefinitionID
-    const siteGroupingId = siteResult.data?.hosts?.[0]?.properties?.siteDefinitionID;
+        // Check if the language version exists
+        const groupingVersionResult = await client.authoring.graphql({
+          body: {
+            query: `
+              query GetSiteGroupingVersion($itemId: ID!, $language: String!) {
+                item(where: { itemId: $itemId, language: $language }) {
+                  language { name }
+                  version
+                }
+              }
+            `,
+            variables: { itemId: siteGroupingId, language },
+          },
+          query: { sitecoreContextId: contextId },
+        });
 
-    if (!siteGroupingId) {
-      return { success: false, message: 'Could not find Site Grouping ID (siteDefinitionID) in site properties.' };
-    }
+        const versionData = (groupingVersionResult.data?.data as any)?.item;
 
-    // Check if the language version exists
-    const groupingVersionResult = await client.authoring.graphql({
-      body: {
-        query: `
-          query GetSiteGroupingVersion($itemId: ID!, $language: String!) {
-            item(where: { itemId: $itemId, language: $language }) {
-              language { name }
-              version
-            }
-          }
-        `,
-        variables: { itemId: siteGroupingId, language },
-      },
-      query: { sitecoreContextId: contextId },
-    });
+        if (!versionData || versionData.version === 0) {
+          await client.authoring.graphql({
+            body: {
+              query: GQL_ADD_VERSION,
+              variables: { itemId: siteGroupingId, language },
+            },
+            query: { sitecoreContextId: contextId },
+          });
+        }
 
-    const versionData = (groupingVersionResult.data?.data as any)?.item;
+        await client.authoring.graphql({
+          body: {
+            query: GQL_UPDATE_LLM_FIELD,
+            variables: { itemId: siteGroupingId, language, value: textToSave },
+          },
+          query: { sitecoreContextId: contextId },
+        });
+        console.log(`Saved ${language} llms.txt to Site Grouping!`);
+      } catch (err) {
+        console.error('Failed to save to Site Grouping on finish', err);
+      }
+    };
 
-    // If we get an item back, but the language name doesn't match or version is 0,
-    // it usually means it fell back to another language or doesn't have this version.
-    // In GraphQL, querying a non-existent language version often returns null for the item or version 0.
-    if (!versionData || versionData.version === 0) {
-      await client.authoring.graphql({
-        body: {
-          query: GQL_ADD_VERSION,
-          variables: { itemId: siteGroupingId, language },
-        },
-        query: { sitecoreContextId: contextId },
+    if (aiKey) {
+      // Stream Response
+      const gw = createGateway({ apiKey: aiKey });
+      const result = await streamText({
+        model: gw('openai/gpt-5-nano'),
+        system: `You are an expert at creating standard llms.txt files.
+Your goal is to parse the raw markdown dumps of multiple pages from a website and output a highly standardized, very clean, and extremely readable llms.txt file.
+The output MUST follow this strict structure:
+1. Start with an H1 (#) of the site name.
+2. Directly under the H1, provide a blockquote (>) summarizing the purpose of the site based on the content.
+3. Add a "## Sections" H2 heading. This must be an index list. For each page, output a strict bullet point: "- [Title](URL): 1-sentence description inferred from content".
+4. Add a "## Full Documentation" H2 heading.
+5. Under "## Full Documentation", go through each page again. Output the page title as an H3 (###) and provide the absolute Source URL.
+6. Clean up the actual raw Markdown text from the pages aggressively. Strip repetitive boilerplate, redundant headers like "XMCloud Demo - Title", and ensure the text is dense and flows logically. Do not change facts, but do compress and format the text properly so it's readable for LLMs.
+
+ONLY output the generated llms.txt Markdown text. Do not wrap it in \`\`\`markdown code blocks.`,
+        prompt: `Format the following raw page aggregations into a standard llms.txt file:\n\n${rawAggregate}`,
+        onFinish: async ({ text }) => {
+          await saveToSitecore(text);
+        }
       });
+      
+      return result.toTextStreamResponse();
+    } else {
+      console.warn("VERCEL_AI_KEY not found in .env. Falling back to basic concatenation.");
+      // Fallback Response
+      let llmContent = `# ${siteName}\n\n> Aggregated AI-ready content for ${siteName}\n\n## Sections\n\n`;
+      for (const page of processedPagesResult) {
+        llmContent += `- [${page.title}](${page.url})\n`;
+      }
+      llmContent += `\n## Full Documentation\n\n`;
+      for (const page of processedPagesResult) {
+        llmContent += `### ${page.title}\nSource: [${page.url}](${page.url})\n\n${page.markdown}\n\n---\n\n`;
+      }
+      
+      await saveToSitecore(llmContent);
+      return new Response(llmContent, { headers: { "Content-Type": "text/plain; charset=utf-8" }});
     }
 
-    await client.authoring.graphql({
-      body: {
-        query: GQL_UPDATE_LLM_FIELD,
-        variables: { itemId: siteGroupingId, language, value: llmContent },
-      },
-      query: { sitecoreContextId: contextId },
-    });
-
-    return { success: true, message: `Generated llms.txt and saved to Site Grouping item (${processedPages.length} pages).` };
   } catch (error: any) {
-    console.error('Error generating llms.txt:', error);
-    return { success: false, message: error.message || 'An unexpected error occurred.' };
+    console.error('Error generating llms.txt stream:', error);
+    return new Response(JSON.stringify({ error: error.message || 'An unexpected error occurred.' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
