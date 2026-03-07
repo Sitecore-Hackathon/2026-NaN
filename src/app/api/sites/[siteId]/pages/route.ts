@@ -12,6 +12,7 @@ export async function GET(
   const siteName = url.searchParams.get('site') ?? '';
   const targetField = url.searchParams.get('targetField') ?? 'AiMarkdown';
   const metaField = url.searchParams.get('metaField') ?? 'AiMarkdownMeta';
+  const language = url.searchParams.get('language') ?? undefined;
   const accessToken = request.headers.get('authorization')?.split(' ')[1];
 
   if (!contextId) {
@@ -32,7 +33,8 @@ export async function GET(
       siteId,
       siteName,
       targetField,
-      metaField
+      metaField,
+      language
     );
     return NextResponse.json(pages);
   } catch (error) {

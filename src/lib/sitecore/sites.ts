@@ -18,7 +18,7 @@ export async function listSites(
     .filter((site) => site.id)
     .map((site) => ({
       id: site.id!,
-      name: site.name ?? '',
+      name: site.hosts?.[0]?.name ?? site.name ?? '',
       displayName: site.displayName ?? site.name ?? '',
       languages: site.languages ?? [],
     }));

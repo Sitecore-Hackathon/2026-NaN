@@ -27,7 +27,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { RefreshCw, Settings, AlertCircle, CheckCircle2, Clock, Loader2, FileText } from 'lucide-react';
+import { RefreshCw, Settings, AlertCircle, CheckCircle2, Clock, Loader2, Ban, FileText } from 'lucide-react';
 import { useAppSettings, useAppConfig } from '@/components/providers/app-settings-provider';
 import { usePreviewContextId } from '@/components/providers/marketplace';
 import { useAuth } from '@/components/providers/auth';
@@ -41,17 +41,25 @@ function formatRelativeTime(dateStr: string | null): string {
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) return '—';
   const diffMs = Date.now() - date.getTime();
+  const mins  = Math.floor(diffMs / 60_000);
   const hours = Math.floor(diffMs / 3_600_000);
-  if (hours < 1) return 'just now';
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  const days  = Math.floor(diffMs / 86_400_000);
+  if (mins  <  1) return 'just now';
+  if (mins  < 60) return `${mins}m ago`;
+  if (hours < 24) {
+    const rem = mins - hours * 60;
+    return rem > 0 ? `${hours}h ${rem}m ago` : `${hours}h ago`;
+  }
+  const remH = hours - days * 24;
+  return remH > 0 ? `${days}d ${remH}h ago` : `${days}d ago`;
 }
 
 function StatusBadge({ status }: { status: PageStatus }) {
   const cfg: Record<PageStatus, { colorScheme: VariantProps<typeof Badge>['colorScheme']; icon: React.ReactNode; label: string }> = {
-    pending:    { colorScheme: 'neutral',     icon: <Clock className="h-3 w-3" />,                    label: 'Pending'    },
-    processed:  { colorScheme: 'success',     icon: <CheckCircle2 className="h-3 w-3" />,             label: 'Processed'  },
-    error:      { colorScheme: 'danger', icon: <AlertCircle className="h-3 w-3" />,              label: 'Error'      },
+    pending:           { colorScheme: 'neutral', icon: <Clock className="h-3 w-3" />,        label: 'Pending'       },
+    processed:         { colorScheme: 'success', icon: <CheckCircle2 className="h-3 w-3" />, label: 'Processed'     },
+    error:             { colorScheme: 'danger',  icon: <AlertCircle className="h-3 w-3" />,  label: 'Error'         },
+    version_not_found: { colorScheme: 'neutral', icon: <Ban className="h-3 w-3" />,          label: 'No version'    },
   };
   const { colorScheme, icon, label } = cfg[status] ?? { colorScheme: 'outline', icon: null, label: status };
   return (
@@ -74,6 +82,7 @@ function StandaloneExtension() {
 
   const [sites, setSites] = useState<SiteSummary[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string>('');
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('');
   const [pages, setPages] = useState<PageSummary[]>([]);
   const [loadingSites, setLoadingSites] = useState(false);
   const [loadingPages, setLoadingPages] = useState(false);
@@ -97,7 +106,10 @@ function StandaloneExtension() {
         if (res.ok) {
           const data: SiteSummary[] = await res.json();
           setSites(data);
-          if (data.length > 0) setSelectedSiteId(data[0].id);
+          if (data.length > 0) {
+            setSelectedSiteId(data[0].id);
+            setSelectedLanguage(data[0].languages[0] ?? 'en');
+          }
         }
       } catch (e) {
         console.error('Failed to fetch sites', e);
@@ -108,7 +120,16 @@ function StandaloneExtension() {
     run();
   }, [sitecoreContextId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch pages when site changes
+  // Keep selected language valid when site changes
+  useEffect(() => {
+    if (!selectedSite) return;
+    const langs = selectedSite.languages;
+    if (!langs.includes(selectedLanguage)) {
+      setSelectedLanguage(langs[0] ?? 'en');
+    }
+  }, [selectedSite]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch pages when site or language changes
   useEffect(() => {
     if (!selectedSite || !sitecoreContextId) {
       setPages([]);
@@ -124,6 +145,7 @@ function StandaloneExtension() {
           site: selectedSite.name,
           targetField: targetFieldName,
           metaField: metaFieldName,
+          language: selectedLanguage,
         });
         const res = await fetch(`/api/sites/${selectedSite.id}/pages?${params}`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -136,12 +158,13 @@ function StandaloneExtension() {
       }
     };
     run();
-  }, [selectedSite, sitecoreContextId, targetFieldName, metaFieldName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedSite, selectedLanguage, sitecoreContextId, targetFieldName, metaFieldName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = useMemo(() => {
     const processed = pages.filter((p) => p.status === 'processed').length;
     const errors = pages.filter((p) => p.status === 'error').length;
-    return { total: pages.length, processed, errors, pending: pages.length - processed - errors };
+    const noVersion = pages.filter((p) => p.status === 'version_not_found').length;
+    return { total: pages.length, processed, errors, noVersion, pending: pages.length - processed - errors - noVersion };
   }, [pages]);
 
   const errorPages = useMemo(() => pages.filter((p) => p.status === 'error'), [pages]);
@@ -156,20 +179,26 @@ function StandaloneExtension() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           contextId: sitecoreContextId,
-          language: selectedSite.languages[0] ?? 'en',
+          language: selectedLanguage,
           targetField: targetFieldName,
           metaField: metaFieldName,
         }),
       });
       if (res.ok) {
-        const result: ProcessPageResult = await res.json();
-        setPages((prev) =>
-          prev.map((p) =>
-            p.id === pageId
-              ? { ...p, status: 'processed', wordCount: result.wordCount, processedAt: result.processedAt }
-              : p
-          )
-        );
+        const result = await res.json() as ProcessPageResult & { status?: string };
+        if (result.status === 'version_not_found') {
+          setPages((prev) =>
+            prev.map((p) => (p.id === pageId ? { ...p, status: 'version_not_found' } : p))
+          );
+        } else {
+          setPages((prev) =>
+            prev.map((p) =>
+              p.id === pageId
+                ? { ...p, status: 'processed', wordCount: result.wordCount, processedAt: result.processedAt }
+                : p
+            )
+          );
+        }
       } else {
         setPages((prev) =>
           prev.map((p) => (p.id === pageId ? { ...p, status: 'error' } : p))
@@ -196,7 +225,7 @@ function StandaloneExtension() {
 
   const startBatch = async () => {
     if (!selectedSite || !sitecoreContextId) return;
-    const pending = pages.filter((p) => p.status !== 'processed');
+    const pending = pages.filter((p) => p.status !== 'version_not_found');
     if (pending.length === 0) return;
 
     batchCancelRef.current = false;
@@ -265,6 +294,9 @@ function StandaloneExtension() {
                 <span className="text-emerald-600 font-medium">{stats.processed} processed</span>
                 {' · '}
                 {stats.pending} pending
+                {stats.noVersion > 0 && (
+                  <span className="font-medium"> · {stats.noVersion} no version</span>
+                )}
                 {stats.errors > 0 && (
                   <span className="text-destructive font-medium"> · {stats.errors} errors</span>
                 )}
@@ -278,20 +310,40 @@ function StandaloneExtension() {
 
         {/* Controls */}
         <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Site:</span>
-            <Select disabled={loadingSites} value={selectedSiteId} onValueChange={setSelectedSiteId}>
-              <SelectTrigger className="w-52">
-                <SelectValue placeholder={loadingSites ? 'Loading…' : 'Select site'} />
-              </SelectTrigger>
-              <SelectContent>
-                {sites.map((site) => (
-                  <SelectItem key={site.id} value={site.id}>
-                    {site.displayName || site.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Site:</span>
+              <Select disabled={loadingSites} value={selectedSiteId} onValueChange={setSelectedSiteId}>
+                <SelectTrigger className="w-52">
+                  <SelectValue placeholder={loadingSites ? 'Loading…' : 'Select site'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {sites.map((site) => (
+                    <SelectItem key={site.id} value={site.id}>
+                      {site.displayName || site.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedSite && selectedSite.languages.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Language:</span>
+                <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {selectedSite.languages.map((lang) => (
+                      <SelectItem key={lang} value={lang}>
+                        {lang}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -320,7 +372,7 @@ function StandaloneExtension() {
               {isBatching ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Cancel</>
               ) : (
-                <><RefreshCw className="h-4 w-4 mr-2" />Start Processing</>
+                <><RefreshCw className="h-4 w-4 mr-2" />Generate</>
               )}
             </Button>
           </div>
@@ -364,7 +416,7 @@ function StandaloneExtension() {
                   <TableHead>Name</TableHead>
                   <TableHead>URL</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Words</TableHead>
+                  <TableHead>Words</TableHead>
                   <TableHead>Last Processed</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
@@ -386,15 +438,15 @@ function StandaloneExtension() {
                   pages.map((page) => (
                     <TableRow key={page.id} className="group">
                       <TableCell className="font-medium">{page.displayName || page.name}</TableCell>
-                      <TableCell>
-                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono text-muted-foreground">
+                      <TableCell className="max-w-60 overflow-hidden">
+                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono text-muted-foreground" title={page.url}>
                           {page.url}
                         </code>
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={page.status} />
                       </TableCell>
-                      <TableCell className="text-right tabular-nums text-sm text-muted-foreground">
+                      <TableCell className="tabular-nums text-sm text-muted-foreground">
                         {page.wordCount ?? '—'}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">

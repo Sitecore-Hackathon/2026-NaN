@@ -4,6 +4,21 @@ import { createGateway } from '@ai-sdk/gateway';
 import { z } from 'zod';
 import { experimental_XMC } from '@sitecore-marketplace-sdk/xmc';
 
+export class VersionNotFoundError extends Error {
+  constructor(itemId: string, language: string) {
+    super(`Item ${itemId} has no version in language "${language}"`);
+    this.name = 'VersionNotFoundError';
+  }
+}
+
+const GQL_CHECK_VERSION = `
+  query CheckVersion($itemId: ID!, $language: String!) {
+    item(where: { itemId: $itemId, language: $language }) {
+      itemId
+    }
+  }
+`;
+
 export interface ProcessPageResult {
   itemId: string;
   markdown: string;
@@ -81,6 +96,20 @@ export async function processPage(
   // concurrency conflict when the host saves via client.setValue() afterward.
   saveToSitecore = true
 ): Promise<ProcessPageResult> {
+  // 0. Guard: confirm the item has a version in the requested language.
+  //    XMC GraphQL returns item: null when no version exists.
+  const versionCheck = await client.authoring.graphql({
+    body: { query: GQL_CHECK_VERSION, variables: { itemId, language } },
+    query: { sitecoreContextId: contextId },
+  });
+  const versionData = versionCheck.data?.data as
+    | { item?: { itemId: string } | null }
+    | null
+    | undefined;
+  if (versionData?.item == null) {
+    throw new VersionNotFoundError(itemId, language);
+  }
+
   // 1. Fetch rendered page HTML via the AI Agent API endpoint.
   //    This endpoint renders the page as-is and returns clean HTML
   //    (not the authoring/edit-mode representation).
