@@ -40,7 +40,7 @@ LLMify addresses these challenges through three integrated extension points:
 - **Seamless Integration**: Runs as an embedded iframe within Sitecore XM Cloud
 
 ## Video link
-[in progress](#video-link)
+[Video link](https://youtu.be/skBJFrp9ixI)
 
 ## Pre-requisites and Dependencies
 
